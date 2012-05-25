@@ -1,0 +1,9 @@
+{
+	"name": "data25c",
+	"version": "0.0.1",
+	"dependencies": {
+  	"pg": "0.5.4",
+		"redis-url": "latest",
+  	"express": "latest"	
+	}
+}
