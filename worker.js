@@ -63,19 +63,6 @@ function processQueue(pgDataClient, pgWebClient, err, result) {
 
 pg.connect(pgDataUrl, function(err, pgDataClient) {
 	if (err == null) {
-		pgDataClient.query('\
-		CREATE TABLE clicks ( \
-    id bigserial PRIMARY KEY, \
-    user_id integer NOT NULL, \
-    publisher_user_id integer NOT NULL, \
-		content_id integer, \
-    ip_address character varying(255), \
-    user_agent text, \
-    referrer text, \
-		state integer NOT NULL DEFAULT 0, \
-    created_at timestamp without time zone NOT NULL, \
-    updated_at timestamp without time zone NOT NULL \
-);', function(err, result) { console.log("err=" + err); });
 		pg.connect(pgWebUrl, function(err, pgWebClient) {
 			console.log("Starting queue processing...");
 			redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
