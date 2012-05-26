@@ -18,8 +18,9 @@ function processQueue(pgDataClient, pgWebClient, err, result) {
 	console.log(result);
 	data = JSON.parse(result);
 	pgWebClient.query("SELECT id FROM users WHERE LOWER(uuid)=LOWER($1)", [ data.user_uuid ], function(err, result) {
+		console.log("made it here?!");
 		if (err != null) {
-			console.log(err);
+			console.log("could not query for user_uuid: " + err);
 		} else if (result.rowCount == 0) {
 			console.log("not found user_uuid=" + data.user_uuid);
 		} else if (result.rowCount == 1) {
