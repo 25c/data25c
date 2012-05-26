@@ -15,15 +15,20 @@ if (pgWebUrl == undefined) {
 }
 
 function processQueue(pgDataClient, pgWebClient, err, result) {
+	console.log(result);
 	data = JSON.parse(result);
 	pgWebClient.query("SELECT id FROM users WHERE LOWER(uuid)=LOWER($1)", [ data.user_uuid ], function(err, result) {
 		if (err != null) {
 			console.log(err);
+		} else if (result.rowCount == 0) {
+			console.log("not found user_uuid=" + data.user_uuid);
 		} else if (result.rowCount == 1) {
 			var user_id = result.rows[0].id;
 			pgWebClient.query("SELECT id FROM users WHERE LOWER(uuid)=LOWER($1)", [ data.publisher_uuid ], function(err, result) {
 				if (err != null) {
 					console.log(err);
+				} else if (result.rowCount == 0) {
+					console.log("not found publisher_uuid=" + data.publisher_uuid);
 				} else if (result.rowCount == 1) {
 					var publisher_user_id = result.rows[0].id;
 					if (data.content_uuid) {
