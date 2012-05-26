@@ -67,12 +67,18 @@ function processQueue(pgDataClient, pgWebClient, err, result) {
 }
 
 pg.connect(pgDataUrl, function(err, pgDataClient) {
-	if (err == null) {
+	if (err != null) {
+		console.log("Could not connect to data postgres: " + err);
+	} else {
 		pg.connect(pgWebUrl, function(err, pgWebClient) {
-			console.log("Starting queue processing...");
-			redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
-				processQueue(pgDataClient, pgWebClient, err, result);
-			})
+			if (err != null) {
+				console.log("Could not connect to web postgres: " + err);
+			} else {
+				console.log("Starting queue processing...");
+				redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
+					processQueue(pgDataClient, pgWebClient, err, result);
+				})
+			}
 		});
 	}
 });
