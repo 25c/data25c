@@ -75,9 +75,9 @@ pg.connect(pgDataUrl, function(err, pgDataClient) {
 		state integer NOT NULL DEFAULT 0, \
     created_at timestamp without time zone NOT NULL, \
     updated_at timestamp without time zone NOT NULL \
-);', function(err, result) {});
-	
+);', function(err, result) { console.log("err=" + err); });
 		pg.connect(pgWebUrl, function(err, pgWebClient) {
+			console.log("Starting queue processing...");
 			redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
 				processQueue(pgDataClient, pgWebClient, err, result);
 			})
