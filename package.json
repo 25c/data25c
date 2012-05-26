@@ -2,8 +2,9 @@
 	"name": "data25c",
 	"version": "0.0.1",
 	"dependencies": {
-  	"pg": "0.5.4",
+  	"pg": "latest",
 		"redis-url": "latest",
-  	"express": "latest"	
+  	"express": "latest",
+		"mygrate": "0.0.2"
 	}
 }
