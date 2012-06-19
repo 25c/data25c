@@ -13,7 +13,16 @@ module.exports = {
       user: "superuser",
       password: ""
     }
-  }
+  },
+	production: {
+		postgresql: {
+			host: "ec2-23-23-234-187.compute-1.amazonaws.com",
+			port: 5432,
+			user: "zwudoojwkmzxws",
+			database: "d4j8bu1un1lrsv",
+			password: "Wuzf1d-95lwV5zXCKJuwB8VheN"
+		}
+	}
 };
 
 if (process.env.DATABASE_URL) {
