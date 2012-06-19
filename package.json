@@ -9,6 +9,6 @@
   	"pg": "latest",
 		"redis-url": "latest",
   	"express": "latest",
-		"mygrate": "0.0.2"
+		"mygrate": "0.0.3"
 	}
 }
