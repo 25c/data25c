@@ -46,6 +46,12 @@ function processQueue(err, result) {
 												console.log(err);
 											} else {
 												console.log(data.created_at + ":" + user_id + ":" + button_id);
+                                                //pop off the head of the PROCESSING_KEY QUE as data was sucessfully written into postgres
+                                                redisDataClient.blpop(PROCESSING_KEY, 0, function(err, result) {
+                                                    if (err != null) {
+		                                                console.log("redis blpop error: " + err);
+                                                    }
+	                                            });
 											}
 										});
 									}
