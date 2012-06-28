@@ -15,6 +15,7 @@ if (pgWebUrl == undefined) {
 }
 
 function processQueue(err, result) {
+    var remove = result; 
 	if (err != null) {
 		console.log("redis brpoplpush error: " + err);
 	} else {
@@ -41,21 +42,23 @@ function processQueue(err, result) {
 									if (err != null) {
 										console.log("Could not connect to data postgres: " + err);
 									} else {
-										pgDataClient.query("INSERT INTO clicks (uuid, user_id, button_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [data.uuid, user_id, button_id, data.ip_address, data.user_agent, data.referrer, 0, data.created_at, new Date()], function(err, result) {
+                                        pgDataClient.query("INSERT INTO clicks (uuid, user_id, button_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [data.uuid, user_id, button_id, data.ip_address, data.user_agent, data.referrer, 0, data.created_at, new Date()], function(err, result) {
 											if (err != null) {
-												console.log(err);
+                                                //this approach generates too many duplicate errors to display
+                                                if (err.routine != '_bt_check_unique'){
+												    console.log("unigue" + err);
+                                                }
 											} else {
 												console.log(data.created_at + ":" + user_id + ":" + button_id);
-                                                //pop off the head of the PROCESSING_KEY QUE as data was sucessfully written into postgres
-                                                redisDataClient.blpop(PROCESSING_KEY, 0, function(err, result) {
+                                                redisDataClient.lrem(PROCESSING_KEY, 0, remove, function(err, result) {
                                                     if (err != null) {
-		                                                console.log("redis blpop error: " + err);
+		                                                console.log("redis lrem error: " + err);
                                                     }
 	                                            });
-											}
+                                            }
 										});
-									}
-								});
+                                    }
+                                });
 							}
 						});
 					}
@@ -63,12 +66,12 @@ function processQueue(err, result) {
 			}
 		});
 	}
-	redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
-		processQueue(err, result);
-	});
+    redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
+	    processQueue(err, result);
+    });
 }
 
 console.log("Starting queue processing...");
 redisDataClient.brpoplpush(QUEUE_KEY, PROCESSING_KEY, 0, function(err, result) {
 	processQueue(err, result);
-})
+});
