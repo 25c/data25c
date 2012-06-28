@@ -24,14 +24,14 @@ function processQueue(err, result) {
 			if (err != null) {
 				console.log("Could not connect to web postgres: " + err);
 			} else {
-				pgWebClient.query("SELECT id FROM users WHERE LOWER(uuid)=LOWER($1)", [ data.user_uuid ], function(err, result) {
+				pgWebClient.query("SELECT id FROM users WHERE LOWER(uuid) = LOWER($1)", [ data.user_uuid ], function(err, result) {
 					if (err != null) {
 						console.log("could not query for user_uuid: " + err);
 					} else if (result.rows.length == 0) {
-						console.log("not found user_uuid=" + data.user_uuid);
+						console.log("not found user_uuid = " + data.user_uuid);
 					} else if (result.rows.length == 1) {
 						var user_id = result.rows[0].id;
-						pgWebClient.query("SELECT id FROM buttons WHERE LOWER(uuid)=LOWER($1)", [ data.button_uuid ], function(err, result) {
+						pgWebClient.query("SELECT id FROM buttons WHERE LOWER(uuid) = LOWER($1)", [ data.button_uuid ], function(err, result) {
 							if (err != null) {
 								console.log(err);
 							} else if (result.rows.length == 0) {
@@ -44,9 +44,14 @@ function processQueue(err, result) {
 									} else {
                                         pgDataClient.query("INSERT INTO clicks (uuid, user_id, button_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [data.uuid, user_id, button_id, data.ip_address, data.user_agent, data.referrer, 0, data.created_at, new Date()], function(err, result) {
 											if (err != null) {
-                                                //this approach generates too many duplicate errors to display
-                                                if (err.routine != '_bt_check_unique'){
-												    console.log("unigue" + err);
+                                                if (err.routine != '_bt_check_unique') {
+												redisDataClient.lrem(PROCESSING_KEY, 0, remove, function(err, result) {
+                                                    if (err != null) {
+		                                                console.log("redis lrem error: " + err);
+                                                    }
+	                                            });
+                                                } else {
+                                                console.log("Not a uniqueness " + err);
                                                 }
 											} else {
 												console.log(data.created_at + ":" + user_id + ":" + button_id);

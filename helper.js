@@ -18,21 +18,22 @@ function processReQueue(err1, result1) {
 	if (err1 != null) {
 		console.log("redis lindex error: " + err1);
 	}
-    setTimeout(null, 500);
-    redisDataClient.lindex(PROCESSING_KEY, -1, function(err2, result2) {
-	    if (result1 != null && result2 != null) {
-            var data1 = JSON.parse(result1);
-            var data2 = JSON.parse(result2);
-            if (data1.uuid == data2.uuid) {
-                redisDataClient.brpoplpush(PROCESSING_KEY, QUEUE_KEY, 0, function(err, result) {
-                    if (err != null) {
-		                console.log("redis brpoplpush error: " + err);
-	                }
-	            });
-            } 
-        }
-        processReQueue(err2, result2);
-    });
+    setTimeout(function(){
+        redisDataClient.lindex(PROCESSING_KEY, -1, function(err2, result2) {
+	        if (result1 != null && result2 != null) {
+                var data1 = JSON.parse(result1);
+                var data2 = JSON.parse(result2);
+                if (data1.uuid == data2.uuid) {
+                    redisDataClient.brpoplpush(PROCESSING_KEY, QUEUE_KEY, 0, function(err, result) {
+                        if (err != null) {
+		                    console.log("redis brpoplpush error: " + err);
+	                    }
+	                });
+                } 
+            }
+            processReQueue(err2, result2);
+        });
+    }, 500);
 }
 
 console.log("Secondary queue processing...");
