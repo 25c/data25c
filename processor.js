@@ -21,41 +21,34 @@ function changeClickState(data, funded, callback) {
 			console.log("Could not connect to data postgres: " + err);
 			callback(err);
 		} else {
-			pgDataClient.pauseDrain();
 			pgDataClient.query("BEGIN", function(err, result) {
 				if (err != null) {
 					console.log("Could not begin data transaction.");
-					pgDataClient.resumeDrain();
 					callback(err);
 				} else {
 					pgDataClient.query("SELECT state FROM clicks WHERE LOWER(uuid) = LOWER($1) FOR UPDATE", [ data.uuid ], function(err, result) {
 						if (err != null) {
 							console.log("Could not fetch click state");
-							pgDataClient.resumeDrain();
 							callback(err);
 						} else if (result.rows.length == 1) {
 							if (result.rows[0].state == 0) {
 								pgDataClient.query("UPDATE clicks SET state=$1 WHERE LOWER(uuid) = LOWER($2)", [ funded ? 2 : 1, data.uuid ], function(err, result) {
 									if (err != null) {
 										console.log("Could not update click state");
-										pgDataClient.resumeDrain();
 										callback(err);
 									} else {
 										pgDataClient.query("PREPARE TRANSACTION 'click-" + data.uuid + "'", function(err, result) {
 											if (err != null) {
 												console.log("Could not prepare click state change transaction");
-												pgDataClient.resumeDrain();
 												callback(err);
 											} else {
 												pgDataClient.query("COMMIT PREPARED 'click-" + data.uuid + "'", function(err, result) {
 													if (err != null) {
 														console.log("Commit prepared failed");
 														pgDataClient.query("ROLLBACK PREPARED 'click-" + data.uuid + "'", function() {
-															pgDataClient.resumeDrain();
 															callback(err);
 														});
 													} else {
-														pgDataClient.resumeDrain();
 														callback(null);
 													}
 												});
@@ -65,7 +58,6 @@ function changeClickState(data, funded, callback) {
 								});
 							} else {
 								console.log("Could not find click " + data.uuid);
-								pgDataClient.resumeDrain();
 								callback("Could not find click " + data.uuid);
 							}
 						}
@@ -82,47 +74,39 @@ function deductFromUserBalance(data, callback) {
 			console.log("Could not connect to web postgres: " + err);
 			callback(err);
 		} else {
-			pgWebClient.pauseDrain();
 			pgWebClient.query("BEGIN", function(err, result) {
 				if (err != null) {
 					console.log("Could not begin user transaction");
-					pgWebClient.resumeDrain();
 					callback(err);
 				} else {
 					pgWebClient.query("SELECT balance FROM users WHERE LOWER(uuid) = LOWER($1) FOR UPDATE", [ data.user_uuid ], function(err, result) {
 						if (err != null) {
 							console.log("Could not get user balance");
-							pgWebClient.resumeDrain();
 							callback(err);
 						} else if (result.rows.length == 1) {
 							var balance = result.rows[0].balance;
 							pgWebClient.query("UPDATE users SET balance=$1 WHERE LOWER(uuid) = LOWER($2)", [ balance-1, data.user_uuid ], function(err, result) {
 								if (err != null) {
 									console.log("Could not deduct from user balance");
-									pgWebClient.resumeDrain();
 									callback(err);
 								} else {
 									pgWebClient.query("PREPARE TRANSACTION 'user-" + data.uuid + "'", function(err, result) {
 										if (err != null) {
 											console.log("Could not prepare balance deduction");
-											pgWebClient.resumeDrain();
 											callback(err);
 										} else {
 											changeClickState(data, balance > 0, function(err) {
 												if (err != null) {
 													pgWebClient.query("ROLLBACK PREPARED 'user-" + data.uuid + "'", function() {
-														pgWebClient.resumeDrain();
 														callback(err);
 													});
 												} else {
 													pgWebClient.query("COMMIT PREPARED 'user-" + data.uuid + "'", function(err, result) {
 														if (err != null) {
-															pgWebClient.resumeDrain();
 															console.log("CRITICAL ERROR user commit failed");
 															callback(err);
 														} else {
 															console.log("DONE: " + data.uuid);
-															pgWebClient.resumeDrain();
 															callback(null);
 														}
 													});
@@ -134,7 +118,6 @@ function deductFromUserBalance(data, callback) {
 							});
 						} else {
 							console.log("User not found " + data.user_uuid);
-							pgWebClient.resumeDrain();
 							callback("User not found " + data.user_uuid);
 						}
 					});
