@@ -131,24 +131,30 @@ function processQueue(err, result) {
 	var remove = result; 
 	if (err != null) {
 		console.log("redis brpoplpush error: " + err);
+		redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
+			processQueue(err, result);
+		});
 	} else {
 		var data = JSON.parse(result);
 		console.log("Processing: " + data.uuid);
 		deductFromUserBalance(data, function(err) {
 			if (err != null) {
 				console.log("ERROR: " + data.uuid + ": " + err);
+				redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
+					processQueue(err, result);
+				});
 			} else {
 				redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, remove, function(err, result) {
 					if (err != null) {
 						console.log("redis lrem error: " + err);
 					}
+					redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
+						processQueue(err, result);
+					});
 				});
 			}
 		});
 	}
-	redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
-		processQueue(err, result);
-	});
 }
 
 console.log("Starting deduct queue processing...");
