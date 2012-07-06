@@ -65,7 +65,8 @@ function processQueue(err, result) {
 													console.log("Not a uniqueness " + err);
 												}
 											} else {
-												console.log(data.created_at + ":" + user_id + ":" + button_id);
+												console.log(data.uuid + ":" + data.created_at + ":" + user_id + ":" + button_id);
+												console.log(remove);
 												redisDataClient.multi().lrem(QUEUE_PROCESSING_KEY, 0, remove).lpush(QUEUE_NEXT_KEY, remove).exec(function(err, result) {
 													if (err != null) {
 														console.log("redis lrem/lpush error: " + err);
