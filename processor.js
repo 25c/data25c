@@ -153,6 +153,12 @@ function processQueue(err, result) {
 		deductFromUserBalance(data, function(err) {
 			if (err != null) {
 				console.log("ERROR: " + data.uuid + ": " + err);
+			} else {
+				redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, remove, function(err, result) {
+					if (err != null) {
+						console.log("redis lrem error: " + err);
+					}
+				});
 			}
 		});
 	}
