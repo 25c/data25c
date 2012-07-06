@@ -133,6 +133,7 @@ function processQueue(err, result) {
 		console.log("redis brpoplpush error: " + err);
 	} else {
 		var data = JSON.parse(result);
+		console.log("Processing: " + data.uuid);
 		deductFromUserBalance(data, function(err) {
 			if (err != null) {
 				console.log("ERROR: " + data.uuid + ": " + err);
