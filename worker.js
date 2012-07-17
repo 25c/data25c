@@ -1,5 +1,8 @@
 var pg = require('pg').native;
 var redis = require('redis-url');
+var airbrake = require('airbrake').createClient('25f60a0bcd9cc454806be6824028a900');
+airbrake.developmentEnvironments = ['development'];
+airbrake.handleExceptions();
 
 var QUEUE_KEY = 'QUEUE';
 var QUEUE_PROCESSING_KEY = 'QUEUE_PROCESSING';
@@ -22,16 +25,19 @@ function insertClick(result, callback) {
 	pg.connect(pgWebUrl, function(err, pgWebClient) {
 		if (err != null) {
 			console.log("Could not connect to web postgres: " + err);
+			airbrake.notify(err);
 			callback(err);
 		} else {
 			pgWebClient.query("SELECT id FROM users WHERE LOWER(uuid) = LOWER($1)", [ data.user_uuid ], function(err, result) {
 				if (err != null) {
 					console.log("could not query for user_uuid: " + err);
+					airbrake.notify(err);
 					callback(err);
 				} else if (result.rows.length == 0) {
 					redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, remove, function(err, result) {
 						if (err != null) {
 							console.log("redis lrem error: " + err);
+							airbrake.notify(err);
 						}
 						callback("not found user_uuid = " + data.user_uuid);
 					});					
@@ -40,11 +46,13 @@ function insertClick(result, callback) {
 					pgWebClient.query("SELECT id FROM buttons WHERE LOWER(uuid) = LOWER($1)", [ data.button_uuid ], function(err, result) {
 						if (err != null) {
 							console.log("could not find button");
+							airbrake.notify(err);
 							callback(err);
 						} else if (result.rows.length == 0) {
 							redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, remove, function(err, result) {
 								if (err != null) {
 									console.log("redis lrem error: " + err);
+									airbrake.notify(err);
 								}
 								callback("not found button_uuid=" + data.button_uuid);
 							});							
@@ -53,6 +61,7 @@ function insertClick(result, callback) {
 							pg.connect(pgDataUrl, function(err, pgDataClient) {
 								if (err != null) {
 									console.log("Could not connect to data postgres: " + err);
+									airbrake.notify(err);
 									callback(err);
 								} else {
 									pgDataClient.query("INSERT INTO clicks (uuid, user_id, button_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [data.uuid, user_id, button_id, data.ip_address, data.user_agent, data.referrer, 0, data.created_at, new Date()], function(err, result) {
@@ -61,17 +70,20 @@ function insertClick(result, callback) {
 												redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, remove, function(err, result) {
 													if (err != null) {
 														console.log("redis lrem error: " + err);
+														airbrake.notify(err);
 													}
 													callback(null);
 												});
 											} else {
 												console.log("Not a uniqueness " + err);
+												airbrake.notify(err);
 												callback(err);
 											}
 										} else {
 											redisDataClient.multi().lrem(QUEUE_PROCESSING_KEY, 0, remove).lpush(QUEUE_NEXT_KEY, remove).exec(function(err, result) {
 												if (err != null) {
 													console.log("redis lrem/lpush error: " + err);
+													airbrake.notify(err);
 												}	else {
 													console.log(data.uuid + ":" + data.created_at + ":" + user_id + ":" + button_id);
 												}
@@ -92,6 +104,7 @@ function insertClick(result, callback) {
 function processQueue(err, result) {
 	if (err != null) {
 		console.log("redis brpoplpush error: " + err);
+		airbrake.notify(err);
 		redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
 			processQueue(err, result);
 		});
@@ -99,6 +112,7 @@ function processQueue(err, result) {
 		insertClick(result, function(err) {
 			if (err != null) {
 				console.log(err);
+				airbrake.notify(err);
 			}
 			redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
 				processQueue(err, result);
