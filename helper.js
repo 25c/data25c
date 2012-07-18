@@ -5,7 +5,9 @@ airbrake.developmentEnvironments = ['development'];
 airbrake.handleExceptions();
 
 var QUEUE_KEY = 'QUEUE';
-var PROCESSING_KEY = 'QUEUE_PROCESSING';
+var QUEUE_PROCESSING_KEY = 'QUEUE_PROCESSING';
+var QUEUE_DEDUCT_KEY = 'QUEUE_DEDUCT';
+var QUEUE_DEDUCT_PROCESSING_KEY = 'QUEUE_DEDUCT_PROCESSING';
 var redisDataClient = redis.connect(process.env.REDISTOGO_URL)
 
 var pgDataUrl = process.env.DATABASE_URL;
@@ -17,34 +19,56 @@ if (pgWebUrl == undefined) {
 	pgWebUrl = "tcp://localhost/web25c_development";
 }
 
-function processReQueue(err1, result1) {
-	if (err1 != null) {
-		console.log("redis lindex error: " + err1);
-		airbrake.notify(err1);
-	}
-	setTimeout(function(){
-		redisDataClient.lindex(PROCESSING_KEY, -1, function(err2, result2) {
-			if (err2 != null) {
-				console.log("redis lindex error: " + err2);
-				airbrake.notify(err2);
-			} else if (result1 != null && result2 != null) {
-				var data1 = JSON.parse(result1);
-				var data2 = JSON.parse(result2);
-				if (data1.uuid == data2.uuid) {
-					redisDataClient.brpoplpush(PROCESSING_KEY, QUEUE_KEY, 0, function(err, result) {
+function compareResults(queueKey, queueProcessingKey, previousResult) {
+	//// wait to check again after delay
+	setTimeout(function() {
+		redisDataClient.lindex(queueProcessingKey, -1, function(err, result) {
+			if (err != null) {
+				//// an error occurred, log
+				console.log(err);
+				airbrake.notify(err);
+				//// try comparison again
+				compareResults(queueKey, queueProcessingKey, previousResult);
+			} else {
+				if (result == previousResult) {
+					//// still around, so remove from processing queue and re-enqueue onto main queue
+					console.log("Re-enqueue into " + queueKey + ": " + result);
+					redisDataClient.multi().lrem(queueProcessingKey, 0, result).lpush(queueKey, result).exec(function(err, result) {
 						if (err != null) {
-							console.log("redis brpoplpush error: " + err);
+							console.log(err);
 							airbrake.notify(err);
 						}
+						//// start this process again
+						processQueue(queueKey, queueProcessingKey);
 					});
-				} 
+				} else {
+					//// compare again with this new result
+					compareResults(queueKey, queueProcessingKey, result);
+				}
 			}
-			processReQueue(err2, result2);
-		});
+		});		
 	}, 500);
 }
 
-console.log("Secondary queue processing...");
-redisDataClient.lindex(PROCESSING_KEY, -1, function(err, result) {
-	processReQueue(err, result);
-});
+function processQueue(queueKey, queueProcessingKey) {
+	//// peek at the head of the processing queue
+	redisDataClient.lindex(queueProcessingKey, -1, function(err, result) {
+		if (err != null) {
+			//// an error occurred, log
+			console.log(err);
+			airbrake.notify(err);
+			//// start over after a delay
+			setTimeout(function() {
+				processQueue(queueKey, queueProcessingKey);
+			}, 500);
+		} else {
+			//// compare and re-enqueue if necessary
+			if (result != null) {
+				compareResults(queueKey, queueProcessingKey, result);
+			}
+		}
+	});	
+}
+
+processQueue(QUEUE_KEY, QUEUE_PROCESSING_KEY);
+processQueue(QUEUE_DEDUCT_KEY, QUEUE_DEDUCT_PROCESSING_KEY);
