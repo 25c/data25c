@@ -29,7 +29,7 @@ function removeEntry(entry, callback) {
 	});						
 }
 
-function changeClickState(data, funded, callback) {
+function changeClickState(data, state, callback) {
 	pg.connect(pgDataUrl, function(err, pgDataClient) {
 		if (err != null) {
 			console.log("Could not connect to data postgres: " + err);
@@ -49,7 +49,7 @@ function changeClickState(data, funded, callback) {
 							callback(err);
 						} else if (result.rows.length == 1) {
 							if (result.rows[0].state == 0) {
-								pgDataClient.query("UPDATE clicks SET state=$1 WHERE LOWER(uuid) = LOWER($2)", [ funded ? 2 : 1, data.uuid ], function(err, result) {
+								pgDataClient.query("UPDATE clicks SET state=$1 WHERE LOWER(uuid) = LOWER($2)", [ state, data.uuid ], function(err, result) {
 									if (err != null) {
 										console.log("Could not update click state");
 										airbrake.notify(err);
@@ -109,40 +109,64 @@ function deductFromUserBalance(data, callback) {
 							callback(err);
 						} else if (result.rows.length == 1) {
 							var balance = result.rows[0].balance;
-							pgWebClient.query("UPDATE users SET balance=$1 WHERE LOWER(uuid) = LOWER($2)", [ balance-1, data.user_uuid ], function(err, result) {
-								if (err != null) {
-									console.log("Could not deduct from user balance");
-									airbrake.notify(err);
-									callback(err);
-								} else {
-									pgWebClient.query("PREPARE TRANSACTION 'user-" + data.uuid + "'", function(err, result) {
-										if (err != null) {
-											console.log("Could not prepare balance deduction");
-											airbrake.notify(err);
-											callback(err);
-										} else {
-											changeClickState(data, balance > 0, function(err) {
-												if (err != null) {
-													pgWebClient.query("ROLLBACK PREPARED 'user-" + data.uuid + "'", function() {
-														callback(err);
-													});
-												} else {
-													pgWebClient.query("COMMIT PREPARED 'user-" + data.uuid + "'", function(err, result) {
-														if (err != null) {
-															console.log("CRITICAL ERROR user commit failed");
-															airbrake.notify(err);
+							if (balance > -40) {
+								//// deduct from balance!
+								balance = balance - 1;
+								pgWebClient.query("UPDATE users SET balance=$1 WHERE LOWER(uuid) = LOWER($2)", [ balance, data.user_uuid ], function(err, result) {
+									if (err != null) {
+										console.log("Could not deduct from user balance");
+										airbrake.notify(err);
+										callback(err);
+									} else {
+										pgWebClient.query("PREPARE TRANSACTION 'user-" + data.uuid + "'", function(err, result) {
+											if (err != null) {
+												console.log("Could not prepare balance deduction");
+												airbrake.notify(err);
+												callback(err);
+											} else {
+												changeClickState(data, (balance >= 0) ? 2 : 1, function(err) {
+													if (err != null) {
+														pgWebClient.query("ROLLBACK PREPARED 'user-" + data.uuid + "'", function() {
 															callback(err);
-														} else {
-															console.log("DONE: " + data.uuid);
-															callback(null);
-														}
-													});
-												}
-											});
+														});
+													} else {
+														pgWebClient.query("COMMIT PREPARED 'user-" + data.uuid + "'", function(err, result) {
+															if (err != null) {
+																console.log("CRITICAL ERROR user commit failed");
+																airbrake.notify(err);
+																callback(err);
+															} else {
+																//// update balance cache in redis
+																redisDataClient.set("user:" + data.user_uuid, balance, function(err, result) {
+																	if (err != null) {
+																		console.log(err);
+																		airbrake.notify(err);
+																	}
+																})
+																console.log("DONE: " + data.uuid);
+																callback(null);
+															}
+														});
+													}
+												});
+											}
+										});			
+									}
+								});
+							} else {
+								//// mark click as dropped, don't update balance in user
+								pgWebClient.query("END", function(err, result) {
+									if (err != null) {
+										airbrake.notify(err);
+									}
+									changeClickState(data, 6, function(err) {
+										if (err == null) {
+											console.log("DROPPED: " + data.uuid);
 										}
-									});			
-								}
-							});
+										callback(err);
+									})
+								});
+							}
 						} else {
 							console.log("User not found " + data.user_uuid);
 							callback("User not found " + data.user_uuid);
