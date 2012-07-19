@@ -18,6 +18,17 @@ var QUEUE_KEY = 'QUEUE_DEDUCT';
 var QUEUE_PROCESSING_KEY = 'QUEUE_DEDUCT_PROCESSING';
 var redisDataClient = redis.connect(process.env.REDISTOGO_URL)
 
+
+function removeEntry(entry, callback) {
+	redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, entry, function(err, result) {
+		if (err != null) {
+			console.log("redis lrem error: " + err);
+			airbrake.notify(err);
+		}
+		callback();
+	});						
+}
+
 function changeClickState(data, funded, callback) {
 	pg.connect(pgDataUrl, function(err, pgDataClient) {
 		if (err != null) {
@@ -66,9 +77,10 @@ function changeClickState(data, funded, callback) {
 									}
 								});
 							} else {
-								console.log("Could not find click " + data.uuid);
-								callback("Could not find click " + data.uuid);
+								callback("Click state already=" + result.rows[0].state);
 							}
+						} else {
+							callback("Could not find click " + data.uuid);
 						}
 					});
 				}
@@ -143,7 +155,6 @@ function deductFromUserBalance(data, callback) {
 }
 
 function processQueue(err, result) {
-	var remove = result; 
 	if (err != null) {
 		console.log("redis brpoplpush error: " + err);
 		airbrake.notify(err);
@@ -152,25 +163,26 @@ function processQueue(err, result) {
 		});
 	} else {
 		var data = JSON.parse(result);
+		if (data == null) {
+			console.log("Could not parse result=" + result);
+			removeEntry(result, function() {
+				redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
+					processQueue(err, result);
+				});
+			});
+			return;
+		}
 		console.log("Processing: " + data.uuid);
 		deductFromUserBalance(data, function(err) {
 			if (err != null) {
 				console.log("ERROR: " + data.uuid + ": " + err);
 				airbrake.notify(err);
+			}
+			removeEntry(result, function() {
 				redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
 					processQueue(err, result);
 				});
-			} else {
-				redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, remove, function(err, result) {
-					if (err != null) {
-						console.log("redis lrem error: " + err);
-						airbrake.notify(err);
-					}
-					redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
-						processQueue(err, result);
-					});
-				});
-			}
+			});
 		});
 	}
 }
