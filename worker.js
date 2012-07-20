@@ -105,27 +105,23 @@ function insertClick(result, callback) {
 	});
 }
 
-function processQueue(err, result) {
-	if (err != null) {
-		console.log("redis brpoplpush error: " + err);
-		airbrake.notify(err);
-		redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
-			processQueue(err, result);
-		});
-	} else {
-		insertClick(result, function(err) {
-			if (err != null) {
-				console.log(err);
-				airbrake.notify(err);
-			}
-			redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
-				processQueue(err, result);
+function processQueue() {
+	redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
+		if (err != null) {
+			console.log("redis brpoplpush error: " + err);
+			airbrake.notify(err);
+			processQueue();
+		} else {
+			insertClick(result, function(err) {
+				if (err != null) {
+					console.log(err);
+					airbrake.notify(err);
+				}
+				processQueue();
 			});
-		});
-	}
+		}
+	});
 }
 
 console.log("Starting queue processing...");
-redisDataClient.brpoplpush(QUEUE_KEY, QUEUE_PROCESSING_KEY, 0, function(err, result) {
-	processQueue(err, result);
-});
+processQueue();
