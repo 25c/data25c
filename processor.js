@@ -16,8 +16,7 @@ if (pgWebUrl == undefined) {
 
 var QUEUE_KEY = 'QUEUE_DEDUCT';
 var QUEUE_PROCESSING_KEY = 'QUEUE_DEDUCT_PROCESSING';
-var redisDataClient = redis.connect(process.env.REDISTOGO_URL)
-
+var redisDataClient = redis.connect(process.env.REDISTOGO_URL);
 
 function removeEntry(entry, callback) {
 	redisDataClient.lrem(QUEUE_PROCESSING_KEY, 0, entry, function(err, result) {
@@ -26,7 +25,7 @@ function removeEntry(entry, callback) {
 			airbrake.notify(err);
 		}
 		callback();
-	});						
+	});
 }
 
 function changeClickState(data, state, callback) {
@@ -141,7 +140,9 @@ function deductFromUserBalance(data, callback) {
 																	if (err != null) {
 																		console.log(err);
 																		airbrake.notify(err);
-																	}
+																	} else {																	  
+																	  // do something
+																  }
 																})
 																console.log("DONE: " + data.uuid);
 																callback(null);
