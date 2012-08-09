@@ -123,7 +123,7 @@ function deductFromUserBalance(data, callback) {
 												airbrake.notify(err);
 												callback(err);
 											} else {
-												changeClickState(data, (balance >= 0) ? 2 : 1, function(err) {
+												changeClickState(data, 1, function(err) {
 													if (err != null) {
 														pgWebClient.query("ROLLBACK PREPARED 'user-" + data.uuid + "'", function() {
 															callback(err);
