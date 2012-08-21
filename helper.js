@@ -62,8 +62,8 @@ function processQueue(queueKey, queueProcessingKey) {
 				processQueue(queueKey, queueProcessingKey);
 			}, 500);
 		} else {
-			//// compare and re-enqueue if necessary
-			if (result != null) {
+			//// compare and re-enqueue if necessary			
+			if (result && result != null) {
 				compareResults(queueKey, queueProcessingKey, result);
 			}
 		}

@@ -34,7 +34,7 @@ function insertClick(uuid, user_id, button_id, referrer_user_id, ip_address, use
 			console.log("Could not connect to data postgres: " + err);
 			callback(err);
 		} else {
-			pgDataClient.query("INSERT INTO clicks (uuid, user_id, button_id, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [uuid, user_id, button_id, referrer_user_id, ip_address, user_agent, referrer, 0, created_at, new Date()], function(err, result) {
+			pgDataClient.query("INSERT INTO clicks (uuid, user_id, button_id, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [uuid, user_id, button_id, referrer_user_id, ip_address, user_agent, referrer, 0, created_at, new Date()], function(err, result) {    	  
 				if (err != null) {
 					if (err.routine = '_bt_check_unique') {
 						removeEntry(remove, function() {
