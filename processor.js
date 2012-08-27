@@ -123,55 +123,56 @@ function deductFromUserBalance(data, callback) {
 						} else if (result.rows.length == 1) {
 							var balance = result.rows[0].balance;
 							balance = balance - 1;
-							pgWebClient.query("UPDATE users SET balance=$1 WHERE LOWER(uuid) = LOWER($2)", [ balance, data.user_uuid ], function(err, result) {
-								if (err != null) {
-									console.log("Could not deduct from user balance");
-									airbrake.notify(err);
-									callback(err);
-								} else {
-									pgWebClient.query("PREPARE TRANSACTION 'user-" + data.uuid + "'", function(err, result) {
-										if (err != null) {
-											console.log("Could not prepare balance deduction");
-											airbrake.notify(err);
-											callback(err);
-										} else {
-											changeClickState(data, 1, function(err) {
-												if (err != null) {
-													pgWebClient.query("ROLLBACK PREPARED 'user-" + data.uuid + "'", function() {
-														callback(err);
-													});
-												} else {
-													pgWebClient.query("COMMIT PREPARED 'user-" + data.uuid + "'", function(err, result) {
-														if (err != null) {
-															console.log("CRITICAL ERROR user commit failed");
-															airbrake.notify(err);
-															callback(err);
-														} else {
-															//// update balance cache in redis
-															redisDataClient.set("user:" + data.user_uuid, balance, function(err, result) {
-																if (err != null) {
-																	console.log(err);
-																	airbrake.notify(err);
-																} else {												  
-                                  if (balance == 40) {
-																    // send overdraft e-mail when balance is 40
-                                    sendOverdraftEmail(data.user_uuid);
-                                  }
-															  }
-															})
-															console.log("DONE: " + data.uuid);
-															callback(null);
-														}
-													});
-												}
-											});
-										}
-									});			
-								}
-							});
+							if (balance > -40) {
+  							pgWebClient.query("UPDATE users SET balance=$1 WHERE LOWER(uuid) = LOWER($2)", [ balance, data.user_uuid ], function(err, result) {
+  								if (err != null) {
+  									console.log("Could not deduct from user balance");
+  									airbrake.notify(err);
+  									callback(err);
+  								} else {
+  									pgWebClient.query("PREPARE TRANSACTION 'user-" + data.uuid + "'", function(err, result) {
+  										if (err != null) {
+  											console.log("Could not prepare balance deduction");
+  											airbrake.notify(err);
+  											callback(err);
+  										} else {
+  											changeClickState(data, 1, function(err) {
+  												if (err != null) {
+  													pgWebClient.query("ROLLBACK PREPARED 'user-" + data.uuid + "'", function() {
+  														callback(err);
+  													});
+  												} else {
+  													pgWebClient.query("COMMIT PREPARED 'user-" + data.uuid + "'", function(err, result) {
+  														if (err != null) {
+  															console.log("CRITICAL ERROR user commit failed");
+  															airbrake.notify(err);
+  															callback(err);
+  														} else {
+  															//// update balance cache in redis
+  															redisDataClient.set("user:" + data.user_uuid, balance, function(err, result) {
+  																if (err != null) {
+  																	console.log(err);
+  																	airbrake.notify(err);
+  																} else {												  
+                                    // do something
+  															  }
+  															})
+  															console.log("DONE: " + data.uuid);
+  															callback(null);
+  														}
+  													});
+  												}
+  											});
+  										}
+  									});			
+  								}
+  							});
+							} else {
+							  callback("User overdraft: " + data.user_uuid);
+						  }
 						} else {
-							console.log("User not found " + data.user_uuid);
-							callback("User not found " + data.user_uuid);
+							console.log("User not found: " + data.user_uuid);
+							callback("User not found: " + data.user_uuid);
 						}
 					});
 				}
