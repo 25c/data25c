@@ -168,7 +168,7 @@ function deductFromUserBalance(data, callback) {
   								}
   							});
 							} else {
-							  callback("User overdraft: " + data.user_uuid);
+							  callback(null);
 						  }
 						} else {
 							console.log("User not found: " + data.user_uuid);
