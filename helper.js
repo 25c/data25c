@@ -30,7 +30,7 @@ function compareResults(queueKey, queueProcessingKey, previousResult) {
 				//// try comparison again
 				compareResults(queueKey, queueProcessingKey, previousResult);
 			} else {
-				if (result == previousResult) {
+				if (result && result == previousResult) {
 					//// still around, so remove from processing queue and re-enqueue onto main queue
 					console.log("Re-enqueue into " + queueKey + ": " + result);
 					redisDataClient.multi().lrem(queueProcessingKey, 0, result).lpush(queueKey, result).exec(function(err, result) {
