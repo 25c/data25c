@@ -11,6 +11,6 @@
   	"express": "latest",
 		"mygrate": "0.0.3",
 		"airbrake": "0.2.9",
-		"prompt": "latest",
+		"prompt": "latest"
 	}
 }
