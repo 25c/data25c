@@ -108,8 +108,8 @@ function deductFromUserBalance(data, callback) {
 							callback(err);
 						} else if (result.rows.length == 1) {
 							var balance = result.rows[0].balance;
-							balance = balance - 1;
 							if (balance > -40) {
+							  balance = balance - 1;
   							pgWebClient.query("UPDATE users SET balance=$1 WHERE LOWER(uuid) = LOWER($2)", [ balance, data.user_uuid ], function(err, result) {
   								if (err != null) {
   									console.log("Could not deduct from user balance");
