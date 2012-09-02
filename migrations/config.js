@@ -16,11 +16,11 @@ module.exports = {
   },
 	production: {
 		postgresql: {
-			host: "ec2-23-23-234-187.compute-1.amazonaws.com",
-			port: 5432,
-			user: "zwudoojwkmzxws",
-			database: "d4j8bu1un1lrsv",
-			password: "Wuzf1d-95lwV5zXCKJuwB8VheN"
+			host: "ec2-23-23-235-211.compute-1.amazonaws.com",
+			port: 5782,
+			user: "u41ipq777smjl8",
+			database: "dc5v5e02h2gkp1",
+			password: "pe6rsb9m9qdc0cdm8dfkh501ird"
 		}
 	}
 };
