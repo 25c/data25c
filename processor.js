@@ -88,7 +88,7 @@ function changeClickState(data, state, callback) {
 	});
 }
 
-function deductFromUserBalance(data, callback) {  
+function deductFromUserBalance(data, callback) {
 	pg.connect(pgWebUrl, function(err, pgWebClient) {
 		if (err != null) {
 			console.log("Could not connect to web postgres: " + err);

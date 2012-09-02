@@ -2,9 +2,6 @@ var pg = require('pg').native;
 var redis = require('redis-url');
 var prompt = require('prompt');
 
-var QUEUE_KEY = 'QUEUE';
-var QUEUE_PROCESSING_KEY = 'QUEUE_PROCESSING';
-var QUEUE_NEXT_KEY = 'QUEUE_DEDUCT';
 var redisDataClient = redis.connect(process.env.REDISTOGO_URL)
 
 var pgDataUrl = process.env.DATABASE_URL;

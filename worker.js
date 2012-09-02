@@ -68,7 +68,7 @@ function validateClick(result, callback) {
 		});
 		return
 	}
-	console.log("Processing: " + data.uuid);
+	console.log("Validating click: " + data.uuid);
 	pg.connect(pgWebUrl, function(err, pgWebClient) {
 		if (err != null) {
 			console.log("Could not connect to web postgres: " + err);
@@ -114,16 +114,11 @@ function validateClick(result, callback) {
   							  insertClick(data.uuid, user_id, button_id, null, data.ip_address, data.user_agent, data.referrer, data.created_at, remove, callback);
   							}
 							} else {
-                  counterKey = data.user_uuid + ":" + data.button_uuid;
-                  redisDataClient.multi().lrem(QUEUE_PROCESSING_KEY, 0, remove).set(counterKey, '0').exec(function(err, result) {
-                     if (err != null) {
-                       console.log("redis lrem/lpush error: " + err);
-                     } else {
-                       console.log("User and button are the same, dropping");
-                     }
-                   callback(null);
+                counterKey = data.user_uuid + ":" + data.button_uuid;
+                removeEntry(remove, function() {
+                  console.log("User is button owner, dropping");
+                  callback(null);
                 });
-                callback(null);
 						  }
 					  }
 					});
