@@ -20,7 +20,7 @@ module.exports = {
 			port: 5782,
 			user: "u41ipq777smjl8",
 			database: "dc5v5e02h2gkp1",
-			password: "pe6rsb9m9qdc0cdm8dfkh501ird"
+			password: ""
 		}
 	}
 };
