@@ -14,6 +14,15 @@ module.exports = {
       password: ""
     }
   },
+	staging: {
+		postgresql: {
+			host: "ec2-107-21-108-69.compute-1.amazonaws.com",
+			port: 5432,
+			user: "tlylvakprmhpdq",
+			database: "ddkgocuj17dmq",
+			password: ""
+		}
+	},
 	production: {
 		postgresql: {
 			host: "ec2-23-23-235-211.compute-1.amazonaws.com",
