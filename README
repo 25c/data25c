@@ -1,0 +1,48 @@
+Setup
+=====
+
+1. Install virtualenv/pip
+
+Sample install on Mac OS X:
+
+$ curl -O https://raw.github.com/pypa/virtualenv/master/virtualenv.py
+$ chmod +x virtualenv.py
+$ sudo mv virtualenv.py /usr/local/bin
+
+For more about virtualenv and pip (the Python package manager/installer):
+
+http://www.pip-installer.org/en/latest/installing.html
+
+2. Set up the environment
+
+After cloning the repository, use virtualenv to create an isolated Python environment for the project (this is similar in concept to using rvm to create isolated configurations for Rails apps).
+
+Make sure you are INSIDE the project directory when you run this command:
+
+$ virtualenv.py venv --distribute
+
+The .gitignore file is configured to ignore the venv directory in the project, as it is specific to your local environment.
+
+3. Activate the environment
+
+Every time you wish to do development/testing, run this in the Terminal:
+
+$ source venv/bin/activate
+
+This will modify your environment so it will use the project-specific isolated configuration in venv.
+
+3. Install the dependencies
+
+Now install the specified dependencies using pip:
+
+$ pip install -r requirements.txt
+
+Testing
+=======
+
+In the root of the project folder, execute the following command (don't forget to activate the environment variables as described above in step 3):
+
+PYTHON_ENV=test python -m unittest discover
+
+This will set the PYTHON_ENV variable for just the execution of the tests.  The "discover" command will crawl through the current folder looking for tests, importing all the packages it finds along the way.
+

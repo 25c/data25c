@@ -1,0 +1,8 @@
+AirbrakePy==1.0.0b2
+distribute==0.6.28
+isodate==0.4.8
+psycopg2==2.4.5
+redis==2.6.2
+wsgiref==0.1.2
+xmlbuilder==0.9
+yoyo-migrations==4.1.6
