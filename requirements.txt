@@ -1,4 +1,5 @@
 AirbrakePy==1.0.0b2
+distribute==0.6.28
 isodate==0.4.8
 psycopg2==2.4.5
 redis==2.6.2
