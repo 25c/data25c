@@ -26,12 +26,12 @@ SETTINGS = {
   },
   'staging': {
     'DATABASE_URL': environ['DATABASE_URL'] if 'DATABASE_URL' in environ else '',
-    'DATABASE_WEB_URL': environ['DATABASE_DATA_URL'] if 'DATABASE_DATA_URL' in environ else '',
+    'DATABASE_WEB_URL': environ['DATABASE_WEB_URL'] if 'DATABASE_WEB_URL' in environ else '',
     'REDIS_URL': environ['REDISTOGO_URL'] if 'REDISTOGO_URL' in environ else ''
   },
   'production': {
     'DATABASE_URL': environ['DATABASE_URL'] if 'DATABASE_URL' in environ else '',
-    'DATABASE_WEB_URL': environ['DATABASE_DATA_URL'] if 'DATABASE_DATA_URL' in environ else '',
+    'DATABASE_WEB_URL': environ['DATABASE_WEB_URL'] if 'DATABASE_WEB_URL' in environ else '',
     'REDIS_URL': environ['REDISTOGO_URL'] if 'REDISTOGO_URL' in environ else ''
   }
 }[environ['PYTHON_ENV'] if 'PYTHON_ENV' in environ else 'development']
