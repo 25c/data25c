@@ -17,6 +17,7 @@ if SETTINGS['PYTHON_ENV'] == 'development' or SETTINGS['PYTHON_ENV'] == 'test':
 else:
   logger.setLevel(logging.INFO)
   handler = AirbrakeHandler(SETTINGS['AIRBRAKE_API_KEY'], environment=SETTINGS['PYTHON_ENV'], component_name='validator', node_name='data25c')
+  handler.setLevel(logging.ERROR)
   logger.addHandler(handler)
   
 # initialize redis connection
