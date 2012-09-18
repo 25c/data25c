@@ -70,7 +70,7 @@ def deduct_click(data):
       # finally, try to commit both
       pg_data.tpc_commit()
       pg_web.tpc_commit()
-      logger.info(data['uuid'] + ':click processed, balance=' + balance + ' for user_uuid=' + data['user_uuid'])
+      logger.info(data['uuid'] + ':click processed, balance=' + str(balance) + ' for user_uuid=' + data['user_uuid'])
     except:
       e = sys.exc_info()[1]
       logger.warning(str(e))
