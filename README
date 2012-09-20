@@ -31,7 +31,7 @@ $ source venv/bin/activate
 
 This will modify your environment so it will use the project-specific isolated configuration in venv.
 
-3. Install the dependencies
+4. Install the dependencies
 
 Now install the specified dependencies using pip:
 
