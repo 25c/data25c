@@ -1,3 +1,4 @@
 validator: python validator.py
 processor: python processor.py
-monitor: python monitor.py
+monitor1: python monitor.py QUEUE
+monitor2: python monitor.py QUEUE_DEDUCT

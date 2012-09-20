@@ -72,6 +72,8 @@ def deduct_click(data):
       pg_data.tpc_commit()
       pg_web.tpc_commit()
       logger.info(data['uuid'] + ':click processed, balance=' + str(balance) + ' for user_uuid=' + data['user_uuid'])
+      # update redis balance cache for user
+      redis_data.set('user:' + data['user_uuid'], balance)
     except:
       e = sys.exc_info()[1]
       logger.warning(str(e))
