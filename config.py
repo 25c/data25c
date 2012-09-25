@@ -25,16 +25,19 @@ SETTINGS = {
     'REDIS_URL': 'redis://localhost:6379/'
   },
   'staging': {
-    'DATABASE_URL': environ['DATABASE_URL'] if 'DATABASE_URL' in environ else '',
-    'DATABASE_WEB_URL': environ['DATABASE_WEB_URL'] if 'DATABASE_WEB_URL' in environ else '',
-    'REDIS_URL': environ['REDISTOGO_URL'] if 'REDISTOGO_URL' in environ else ''
+    # db and redis urls set from environment variables below
   },
   'production': {
-    'DATABASE_URL': environ['DATABASE_URL'] if 'DATABASE_URL' in environ else '',
-    'DATABASE_WEB_URL': environ['DATABASE_WEB_URL'] if 'DATABASE_WEB_URL' in environ else '',
-    'REDIS_URL': environ['REDISTOGO_URL'] if 'REDISTOGO_URL' in environ else ''
+    # db and redis urls set from environment variables below
   }
 }[environ['PYTHON_ENV'] if 'PYTHON_ENV' in environ else 'development']
+
+if 'DATABASE_URL' in environ:
+  SETTINGS['DATABASE_URL'] = environ['DATABASE_URL']
+if 'DATABASE_WEB_URL' in environ:
+  SETTINGS['DATABASE_WEB_URL'] = environ['DATABASE_WEB_URL']
+if 'REDISTOGO_URL' in environ:
+  SETTINGS['REDIS_URL'] = environ['REDISTOGO_URL']
 
 SETTINGS['PYTHON_ENV'] = environ['PYTHON_ENV'] if 'PYTHON_ENV' in environ else 'development'
 SETTINGS['AIRBRAKE_API_KEY'] = '25f60a0bcd9cc454806be6824028a900'
