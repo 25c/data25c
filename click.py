@@ -69,7 +69,7 @@ def undo_click(uuid):
       try:
         pg_data.tpc_commit()
         try:
-          logger.info(uuid + ':click processed, balance=' + str(balance) + ' for user_uuid=' + user_uuid)
+          logger.info(uuid + ':click undone, balance=' + str(balance) + ' for user_uuid=' + user_uuid)
           # update redis balance cache for user
           redis_data.set('user:' + user_uuid, balance)
         except:
