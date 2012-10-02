@@ -63,5 +63,32 @@ class TestClickFunctions(unittest.TestCase):
     result = cursor_data.fetchone()
     self.assertEqual(5, result[0])
     
+  def test_fund_click(self):
+    cursor_web = self.pg_web.cursor()
+    cursor_data = self.pg_data.cursor()
+    
+    # assert starting state and balance
+    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual(-1, result[0])
+    self.assertEqual(-1, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    
+    cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
+    result = cursor_data.fetchone()
+    self.assertEqual(1, result[0])
+    
+    # undo the click
+    self.app.post('/api/clicks/fund', data='uuids[]=a2afb8a0-fc6f-11e1-b984-eff95004abc9', content_type='application/x-www-form-urlencoded')
+    
+    # assert ending state and balance
+    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual(0, result[0])
+    self.assertEqual(0, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    
+    cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
+    result = cursor_data.fetchone()
+    self.assertEqual(2, result[0])
+    
 if __name__ == '__main__':
   unittest.main()

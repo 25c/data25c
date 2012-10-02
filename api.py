@@ -24,6 +24,12 @@ def clicks_undo():
   for uuid in request.form.getlist('uuids[]'):
     click.undo_click(uuid)
   return ''
+
+@app.route('/api/clicks/fund', methods=['POST'])
+def clicks_fund():
+  for uuid in request.form.getlist('uuids[]'):
+    click.fund_click(uuid)
+  return ''
   
 if __name__ == '__main__':
   port = int(os.environ.get('PORT', 5400))
