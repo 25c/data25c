@@ -1,0 +1,4 @@
+step(
+  "ALTER TABLE clicks ADD COLUMN amount INTEGER NOT NULL DEFAULT 25;",
+  "ALTER TABLE clicks DROP COLUMN amount;"
+)

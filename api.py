@@ -1,5 +1,6 @@
 from airbrakepy.logging.handlers import AirbrakeHandler
 from config import SETTINGS
+from datetime import datetime
 from flask import Flask, request
 
 import click
@@ -22,13 +23,7 @@ app = Flask(__name__)
 @app.route('/api/clicks/undo', methods=['POST'])
 def clicks_undo():
   for uuid in request.form.getlist('uuids[]'):
-    click.undo_click(uuid)
-  return ''
-
-@app.route('/api/clicks/fund', methods=['POST'])
-def clicks_fund():
-  for uuid in request.form.getlist('uuids[]'):
-    click.fund_click(uuid)
+    click.update_click(uuid, 0, datetime.now())
   return ''
   
 if __name__ == '__main__':
