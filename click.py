@@ -23,9 +23,9 @@ pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
 # initialize redis connection
 redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
 
-def undo_click(uuid):
-  xid_web = uuid + '-user'
-  xid_data = uuid + '-click'
+def update_click_state_and_user_balance(uuid, old_state, new_state, balance_delta, desc):
+  xid_web = uuid + '-' + desc + '-user'
+  xid_data = uuid + '-' + desc + '-click'
   web_cursor = None
   data_cursor = None
   try:
@@ -38,11 +38,11 @@ def undo_click(uuid):
     if result is None:
       raise Exception(uuid + ':invalid click')
     state = result[1]
-    if state != 1:
+    if state != old_state:
       raise Exception(uuid + ':click already state=' + str(state))
     user_id = result[2]
-    # set to undone state
-    state = 5
+    # set to fund state
+    state = new_state
     data_cursor.execute("UPDATE clicks SET state=%s WHERE id=%s", (state, result[0]))
     data_cursor.close()
     data_cursor = None
@@ -58,7 +58,7 @@ def undo_click(uuid):
       if result is None:
         raise Exception(uuid + ':invalid user_id=' + user_id)
       user_uuid = result[0]
-      balance = result[1] + 1
+      balance = result[1] + balance_delta
       web_cursor.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id,))
       web_cursor.close()
       web_cursor = None
@@ -69,7 +69,7 @@ def undo_click(uuid):
       try:
         pg_data.tpc_commit()
         try:
-          logger.info(uuid + ':click undone, balance=' + str(balance) + ' for user_uuid=' + user_uuid)
+          logger.info(uuid + ':click ' + desc + ', balance=' + str(balance) + ' for user_uuid=' + user_uuid)
           # update redis balance cache for user
           redis_data.set('user:' + user_uuid, balance)
         except:
@@ -91,3 +91,9 @@ def undo_click(uuid):
     if data_cursor is not None:
       data_cursor.close()
     pg_data.tpc_rollback()
+
+def fund_click(uuid):
+  update_click_state_and_user_balance(uuid, 1, 2, 1, 'fund')
+
+def undo_click(uuid):
+  update_click_state_and_user_balance(uuid, 1, 5, 1, 'undo')
