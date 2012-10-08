@@ -4,10 +4,9 @@ import unittest
 import monitor
 
 class TestMonitorFunctions(unittest.TestCase):
-  
-  redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
-  
+    
   def setUp(self):    
+    self.redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
     # clear the redis queues
     self.redis_data.delete('QUEUE')
     self.redis_data.delete('QUEUE_PROCESSING')

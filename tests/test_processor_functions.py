@@ -5,12 +5,12 @@ import redis
 import unittest
 
 class TestProcessorFunctions(unittest.TestCase):
-  
-  pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
-  pg_data = pg_connect(SETTINGS['DATABASE_URL'])
-  redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
-  
+    
   def setUp(self):
+    self.pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
+    self.pg_data = pg_connect(SETTINGS['DATABASE_URL'])
+    self.redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
+    
     # turn on autocommit
     self.pg_web.autocommit = True
     self.pg_data.autocommit = True
@@ -28,6 +28,10 @@ class TestProcessorFunctions(unittest.TestCase):
     # clear the redis queues
     self.redis_data.delete('QUEUE')
     self.redis_data.delete('QUEUE_PROCESSING')
+    
+  def tearDown(self):
+    self.pg_data.close()
+    self.pg_web.close()
   
   def test_process_message(self):
     cursor_web = self.pg_web.cursor()

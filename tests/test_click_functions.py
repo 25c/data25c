@@ -10,11 +10,10 @@ import click
 
 class TestClickFunctions(unittest.TestCase):
   
-  pg_data = pg_connect(SETTINGS['DATABASE_URL'])
-  pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
-  redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
-  
   def setUp(self):
+    self.pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
+    self.pg_data = pg_connect(SETTINGS['DATABASE_URL'])
+    self.redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
     # turn on autocommit
     self.pg_data.autocommit = True
     self.pg_web.autocommit = True
@@ -28,6 +27,10 @@ class TestClickFunctions(unittest.TestCase):
     cursor = self.pg_web.cursor()
     cursor.execute("UPDATE users SET balance=0 WHERE uuid=%s", ("3dd80d107941012f5e2c60c5470a09c8",))
     self.redis_data.set('user:3dd80d107941012f5e2c60c5470a09c8', 0)
+    
+  def tearDown(self):
+    self.pg_data.close()
+    self.pg_web.close()
     
   def test_validate_click(self):    
     # invalid user_id
