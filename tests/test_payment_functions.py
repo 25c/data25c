@@ -48,6 +48,7 @@ class TestPaymentFunctions(unittest.TestCase):
   def tearDown(self):
     self.pg_data.close()
     self.pg_web.close()
+    self.redis_data.connection_pool.disconnect()
     
   def test_process_payment(self):
     web_cursor = self.pg_web.cursor()

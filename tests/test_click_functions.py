@@ -31,6 +31,7 @@ class TestClickFunctions(unittest.TestCase):
   def tearDown(self):
     self.pg_data.close()
     self.pg_web.close()
+    self.redis_data.connection_pool.disconnect()
     
   def test_validate_click(self):    
     # invalid user_id
