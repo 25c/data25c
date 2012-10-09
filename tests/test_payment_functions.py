@@ -42,7 +42,7 @@ class TestPaymentFunctions(unittest.TestCase):
       processor.process_message(message)
       
     # and a payment for these clicks
-    cursor.execute("INSERT INTO payments (uuid, user_id, amount, payment_type, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)", ('5698bd9c-7406-4a2c-854c-5943c017c944', self.user_id, 1250, 'payin', datetime.now(), datetime.now()))
+    cursor.execute("INSERT INTO payments (uuid, user_id, amount, payment_type, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)", ('5698bd9c-7406-4a2c-854c-5943c017c944', self.user_id, 1250, 'payin', datetime.utcnow(), datetime.utcnow()))
     cursor.close()
     
   def tearDown(self):
@@ -65,7 +65,7 @@ class TestPaymentFunctions(unittest.TestCase):
     self.assertEqual(1250, result[0])
     self.assertEqual(1250, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
-    data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=1 AND user_id=%s", (self.user_id,))
+    data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=1 AND funded_at IS NULL AND user_id=%s", (self.user_id,))
     result = data_cursor.fetchone()
     self.assertEqual(50, result[0])
     
@@ -82,7 +82,7 @@ class TestPaymentFunctions(unittest.TestCase):
     self.assertEqual(0, result[0])
     self.assertEqual(0, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
-    data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=2 AND user_id=%s", (self.user_id,))
+    data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=2 AND funded_at IS NOT NULL AND user_id=%s", (self.user_id,))
     result = data_cursor.fetchone()
     self.assertEqual(50, result[0])
     

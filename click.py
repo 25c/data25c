@@ -92,7 +92,7 @@ def update_click(uuid, amount, created_at):
     else:
       state = 5
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE id=%s", (state, amount, datetime.now(), result[0]))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE id=%s", (state, amount, datetime.utcnow(), result[0]))
     logger.info(uuid + ':updated')
     data_cursor.close()
     data_cursor = None
@@ -152,7 +152,7 @@ def insert_click(uuid, user_id, button_id, amount, referrer_user_id, ip_address,
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
     # attempt insert 
-    data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.now()))
+    data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
     logger.info(uuid + ':inserted')
     data_cursor.close()
     data_cursor = None

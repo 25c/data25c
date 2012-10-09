@@ -26,8 +26,8 @@ pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
 redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
     
 def process_payment(uuid):
-  xid_web = uuid + '-' + str(datetime.now()) + '-process-user'
-  xid_data = uuid + '-' + str(datetime.now()) + '-process-click'
+  xid_web = uuid + '-' + str(datetime.utcnow()) + '-process-user'
+  xid_data = uuid + '-' + str(datetime.utcnow()) + '-process-click'
   web_cursor = None
   data_cursor = None
   try:
@@ -77,7 +77,7 @@ def process_payment(uuid):
       if total_amount != amount:
         raise Exception(uuid + ':payment/user balance amount=' + str(amount) + ' is not equal to deducted click total amount=' + str(total_amount))
       # update state of all clicks
-      data_cursor.execute("UPDATE clicks SET state=2 WHERE id IN %s", (tuple(click_ids),))
+      data_cursor.execute("UPDATE clicks SET state=2, funded_at=%s WHERE id IN %s", (datetime.utcnow(), tuple(click_ids)))
       data_cursor.close()
       data_cursor = None
       # prepare tpc transaction

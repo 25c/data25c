@@ -45,7 +45,7 @@ class TestApiFunctions(unittest.TestCase):
       processor.process_message(message)
       
     # and a payment for these clicks
-    cursor.execute("INSERT INTO payments (uuid, user_id, amount, payment_type, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)", ('5698bd9c-7406-4a2c-854c-5943c017c944', self.user_id, 1250, 'payin', datetime.now(), datetime.now()))
+    cursor.execute("INSERT INTO payments (uuid, user_id, amount, payment_type, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)", ('5698bd9c-7406-4a2c-854c-5943c017c944', self.user_id, 1250, 'payin', datetime.utcnow(), datetime.utcnow()))
     cursor.close()
     
   def tearDown(self):

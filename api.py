@@ -24,7 +24,7 @@ app = Flask(__name__)
 @app.route('/api/clicks/undo', methods=['POST'])
 def clicks_undo():
   for uuid in request.form.getlist('uuids[]'):
-    click.update_click(uuid, 0, datetime.now())
+    click.update_click(uuid, 0, datetime.utcnow())
   return ''
 
 @app.route('/api/payments/process', methods=['POST'])
