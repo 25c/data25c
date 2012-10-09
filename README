@@ -37,6 +37,15 @@ Now install the specified dependencies using pip:
 
 $ pip install -r requirements.txt
 
+Migrations
+==========
+
+To apply any database migrations, after activating the environment, run:
+
+$ yoyo-migrate apply ./migrations/ postgres://superuser@localhost/data25c_development
+
+Replace the database url if necessary.
+
 
 Testing
 =======
