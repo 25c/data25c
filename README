@@ -44,8 +44,11 @@ To apply any database migrations, after activating the environment, run:
 
 $ yoyo-migrate apply ./migrations/ postgres://superuser@localhost/data25c_development
 
-Replace the database url if necessary.
+Replace the database url if necessary.  For deployments:
 
+$ heroku run yoyo-migrate --verbosity=3 -b apply ./migrations \$DATABASE_URL --app data25c-stage
+
+Replace app as necessary
 
 Testing
 =======
