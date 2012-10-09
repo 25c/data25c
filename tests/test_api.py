@@ -78,7 +78,7 @@ class TestApiFunctions(unittest.TestCase):
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
-    self.assertEqual(1, result[0])
+    self.assertEqual(5, result[0])
     
   def test_process_payment(self):
     web_cursor = self.pg_web.cursor()

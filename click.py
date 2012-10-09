@@ -83,12 +83,16 @@ def update_click(uuid, amount, created_at):
     if result is None:
       raise Exception(uuid + ':click not found')
     state = result[1]
-    if state != 1:
+    if state != 1 and state != 5:
       raise Exception(uuid + ':click already state=' + str(state))
     user_id = result[2]
     old_amount = result[3]
+    if amount > 0:
+      state = 1
+    else:
+      state = 5
     # update click
-    data_cursor.execute("UPDATE clicks SET amount=%s, updated_at=%s WHERE id=%s", (amount, datetime.now(), result[0]))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE id=%s", (state, amount, datetime.now(), result[0]))
     logger.info(uuid + ':updated')
     data_cursor.close()
     data_cursor = None
