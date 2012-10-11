@@ -42,7 +42,7 @@ class TestPaymentFunctions(unittest.TestCase):
       processor.process_message(message)
       
     # and a payment for these clicks
-    cursor.execute("INSERT INTO payments (uuid, user_id, amount, payment_type, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)", ('5698bd9c-7406-4a2c-854c-5943c017c944', self.user_id, 1250, 'payin', datetime.utcnow(), datetime.utcnow()))
+    cursor.execute("INSERT INTO payments (uuid, user_id, amount, payment_type, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)", ('5698bd9c-7406-4a2c-854c-5943c017c944', self.user_id, 1250000000, 'payin', datetime.utcnow(), datetime.utcnow()))
     cursor.close()
     
   def tearDown(self):
@@ -58,12 +58,12 @@ class TestPaymentFunctions(unittest.TestCase):
     web_cursor.execute("SELECT state, amount FROM payments WHERE uuid=%s", ('5698bd9c-7406-4a2c-854c-5943c017c944',))
     result = web_cursor.fetchone()
     self.assertEqual(0, result[0])
-    self.assertEqual(1250, result[1])
+    self.assertEqual(1250000000, result[1])
     
     web_cursor.execute("SELECT balance FROM users WHERE id=%s", (self.user_id,))
     result = web_cursor.fetchone()
-    self.assertEqual(1250, result[0])
-    self.assertEqual(1250, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual(1250000000, result[0])
+    self.assertEqual(1250000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
     data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=1 AND funded_at IS NULL AND user_id=%s", (self.user_id,))
     result = data_cursor.fetchone()

@@ -54,8 +54,8 @@ class TestProcessorFunctions(unittest.TestCase):
     
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(25, result[0])
-    self.assertEqual(25, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual(25000000, result[0])
+    self.assertEqual(25000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
@@ -66,8 +66,8 @@ class TestProcessorFunctions(unittest.TestCase):
     
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(25, result[0])
-    self.assertEqual(25, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual(25000000, result[0])
+    self.assertEqual(25000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
@@ -79,8 +79,8 @@ class TestProcessorFunctions(unittest.TestCase):
     
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(1000, result[0])
-    self.assertEqual(1000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual(1000000000, result[0])
+    self.assertEqual(1000000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
