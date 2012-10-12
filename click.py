@@ -2,10 +2,12 @@ from airbrakepy.logging.handlers import AirbrakeHandler
 from config import SETTINGS, pg_connect
 from datetime import datetime
 
+import json
 import logging
 import psycopg2
 import redis
 import sys
+import uuid as uuid_mod
 
 # initialize logger
 logging.basicConfig()
@@ -40,16 +42,18 @@ def validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid):
     user_id = result[0]
     
     # validate button uuid
-    cursor.execute("SELECT id, user_id FROM buttons WHERE LOWER(uuid) = LOWER(%s)", (button_uuid,))
+    cursor.execute("SELECT id, user_id, share_users FROM buttons WHERE LOWER(uuid) = LOWER(%s)", (button_uuid,))
     result = cursor.fetchone()
     if result is None:
       logger.warn(uuid + ':invalid button_uuid=' + button_uuid)
       return          
     # drop click if user is clicking on own button!
-    if user_id == result[1]:
+    button_id = result[0]
+    button_user_id = result[1]
+    share_users = result[2]
+    if user_id == button_user_id:
       logger.warn(uuid + ':invalid user_uuid=' + user_uuid + ' is owner of button_uuid=' + button_uuid)
       return
-    button_id = result[0]
   
     # validate referrer user uuid, if present
     referrer_user_id = None
@@ -61,14 +65,23 @@ def validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid):
       else:
         logger.warn(uuid + ':invalid referrer_user_uuid=' + referrer_user_uuid)
         
+    # see if a rev share has been set up
+    share = None
+    if share_users is not None and share_users != '':
+      try:
+        share = json.loads(share_users)
+      except:
+        logger.exception(uuid + ':invalid button revenue share')
+        pass
+        
     # return user/button/referrer ids
-    return (user_id, button_id, referrer_user_id)
+    return (user_id, button_id, referrer_user_id, button_user_id, share)
   finally:
     if cursor is not None:
       cursor.close()
     pg_web.autocommit = False
   
-def update_click(uuid, amount, created_at):
+def update_click(uuid, button_user_id, amount, created_at):
   xid_data = uuid + '-' + str(created_at) + '-update-click'
   xid_web = uuid + '-' + str(created_at) + '-update-user'
   data_cursor = None
@@ -78,10 +91,11 @@ def update_click(uuid, amount, created_at):
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
     # get previous value
-    data_cursor.execute("SELECT id, state, user_id, amount FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
+    data_cursor.execute("SELECT id, state, user_id, amount, button_id, share_users FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
     result = data_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':click not found')
+    click_id = result[0]
     state = result[1]
     if state != 1 and state != 5:
       raise Exception(uuid + ':click already state=' + str(state))
@@ -91,8 +105,31 @@ def update_click(uuid, amount, created_at):
       state = 1
     else:
       state = 5
+    button_id = result[4]
+    share_users = result[5]
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE id=%s", (state, amount, datetime.utcnow(), result[0]))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE id=%s", (state, amount, datetime.utcnow(), click_id))
+    if share_users is not None:
+      # iterate over and update share amount
+      try:
+        share_users = json.loads(share_users)
+        remainder = 100
+        for share in share_users:
+          data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*share['share_amount']/100, datetime.utcnow(), click_id, share['user']))
+          remainder -= share['share_amount']
+        if button_user_id is None:
+          # look up button user id
+          web_cursor = pg_web.cursor()
+          web_cursor.execute("SELECT user_id FROM buttons WHERE id=%s", (button_id,))
+          result = web_cursor.fetchone()
+          if result is None:
+            raise Exception(uuid + ': could not look up button user id')
+          button_user_id = result[0]
+          web_cursor.close()
+          pg_web.commit()
+        data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*remainder/100, datetime.utcnow(), click_id, button_user_id))
+      except ValueError:
+        logger.exception(uuid + ': could not parse revenue share definition')
     logger.info(uuid + ':updated')
     data_cursor.close()
     data_cursor = None
@@ -142,7 +179,7 @@ def update_click(uuid, amount, created_at):
       data_cursor.close()
     pg_data.tpc_rollback()
     
-def insert_click(uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, created_at):
+def insert_click(uuid, user_id, button_id, referrer_user_id, button_user_id, share_users, amount, ip_address, user_agent, referrer, created_at):
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
   xid_web = uuid + '-' + str(created_at) + '-insert-user'
   data_cursor = None
@@ -152,7 +189,21 @@ def insert_click(uuid, user_id, button_id, amount, referrer_user_id, ip_address,
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
     # attempt insert 
-    data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (uuid, user_id, button_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+    if share_users is None:
+      # no share, so just insert this click with the button owner as the receiver of the full amount
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (uuid, user_id, button_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+    else:
+      # first insert the click with the full amount and no receiver- this will be the parent click
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
+      result = data_cursor.fetchone()
+      click_id = result[0]
+      # create a click for each user in the share, giving them their amount
+      remainder = 100
+      for share in share_users:
+        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, share['user'], amount * share['share_amount'] / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+        remainder -= share['share_amount']
+      # finally, give the remainder to the button owner
+      data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
     logger.info(uuid + ':inserted')
     data_cursor.close()
     data_cursor = None
@@ -200,7 +251,7 @@ def insert_click(uuid, user_id, button_id, amount, referrer_user_id, ip_address,
     if data_cursor is not None:
       data_cursor.close()
     pg_data.tpc_rollback()
-    update_click(uuid, amount, created_at)
+    update_click(uuid, button_user_id, amount, created_at)
   except:
     e = sys.exc_info()[1]
     logger.exception(uuid + ':' + str(e))

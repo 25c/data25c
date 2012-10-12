@@ -36,7 +36,7 @@ def process_message(message):
   # validate message and insert
   ids = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data['referrer_user_uuid'])
   if ids is not None:
-    click.insert_click(data['uuid'], ids[0], ids[1], data['amount']*1000000, ids[2], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    click.insert_click(data['uuid'], ids[0], ids[1], ids[2], ids[3], ids[4], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     
 def process_queue():
   # block and wait for click data, pushing into processing queue
