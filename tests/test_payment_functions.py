@@ -36,9 +36,19 @@ class TestPaymentFunctions(unittest.TestCase):
     cursor.execute("UPDATE users SET balance=0 WHERE uuid=%s", ("3dd80d107941012f5e2c60c5470a09c8",))
     self.redis_data.set('user:3dd80d107941012f5e2c60c5470a09c8', 0)
     
-    # now insert a series of test clicks
-    for i in range(50):
+    # set up a revenue share on another button
+    cursor.execute("SELECT id FROM users WHERE uuid=%s", ("439bdb807941012f5e2d60c5470a09c8",))
+    result = cursor.fetchone()
+    share_users = json.dumps([{'user':result[0],'share_amount':10}])
+    cursor.execute("UPDATE buttons SET share_users=%s WHERE uuid=%s", (share_users, "92d1cdb0f60c012f5f3960c5470a09c8",))
+    
+    # now insert a series of test clicks on the non-rev-share button
+    for i in range(40):
       message = '{"uuid":"' + str(uuid.uuid4()) + '", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
+      processor.process_message(message)
+    # and now a series of clicks on the rev-share button
+    for i in range(10):
+      message = '{"uuid":"' + str(uuid.uuid4()) + '", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"92d1cdb0f60c012f5f3960c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
       processor.process_message(message)
       
     # and a payment for these clicks
@@ -67,7 +77,7 @@ class TestPaymentFunctions(unittest.TestCase):
     
     data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=1 AND funded_at IS NULL AND user_id=%s", (self.user_id,))
     result = data_cursor.fetchone()
-    self.assertEqual(50, result[0])
+    self.assertEqual(70, result[0])
     
     # process payment
     payment.process_payment('5698bd9c-7406-4a2c-854c-5943c017c944')
@@ -84,7 +94,7 @@ class TestPaymentFunctions(unittest.TestCase):
     
     data_cursor.execute("SELECT COUNT(*) FROM clicks WHERE state=2 AND funded_at IS NOT NULL AND user_id=%s", (self.user_id,))
     result = data_cursor.fetchone()
-    self.assertEqual(50, result[0])
+    self.assertEqual(70, result[0])
     
     
 if __name__ == '__main__':

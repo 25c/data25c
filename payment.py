@@ -69,10 +69,11 @@ def process_payment(uuid):
       # get all current deducted clicks
       click_ids = []
       total_amount = 0
-      data_cursor.execute("SELECT id, amount FROM clicks WHERE state=%s AND user_id=%s FOR UPDATE", (1, user_id))
+      data_cursor.execute("SELECT id, parent_click_id, amount FROM clicks WHERE state=%s AND user_id=%s FOR UPDATE", (1, user_id))
       for result in data_cursor:
         click_ids.append(result[0])
-        total_amount += result[1]
+        if result[1] is None:
+          total_amount += result[2]
       # verify amount matches
       if total_amount != amount:
         raise Exception(uuid + ':payment/user balance amount=' + str(amount) + ' is not equal to deducted click total amount=' + str(total_amount))
