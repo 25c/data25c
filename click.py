@@ -25,8 +25,9 @@ else:
 pg_data = pg_connect(SETTINGS['DATABASE_URL'])
 pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
   
-# initialize redis connection
+# initialize redis connections
 redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
+redis_web = redis.StrictRedis.from_url(SETTINGS['REDIS_WEB_URL'])
   
 def validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid):
   cursor = None
@@ -287,8 +288,9 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
       if result is None:
         raise Exception(uuid + ':invalid user_id=' + user_id)
       user_uuid = result[0]
-      balance = result[1] + amount
-      web_cursor.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
+      balance = result[1]
+      new_balance = balance + amount
+      web_cursor.execute("UPDATE users SET balance=%s WHERE id=%s", (new_balance, user_id))
       web_cursor.close()
       web_cursor = None
       # prepare tpc transaction on web
@@ -298,9 +300,12 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
       try:
         pg_data.tpc_commit()
         try:
-          logger.info(uuid + ':click inserted, balance=' + str(balance) + ' for user_uuid=' + user_uuid)
+          logger.info(uuid + ':click inserted, balance=' + str(new_balance) + ' for user_uuid=' + user_uuid)
           # update redis balance cache for user
-          redis_data.set('user:' + user_uuid, balance)
+          redis_data.set('user:' + user_uuid, new_balance)
+          # send funding reminder, if necessary
+          if balance < 1000000000 and new_balance >= 1000000000:
+            send_fund_reminder_email(user_id)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
@@ -351,4 +356,7 @@ def delete_facebook_action(uuid, fb_action_id):
       logger.exception(uuid + ':could not delete Facebook action with fb_action_id=' + str(fb_action_id))
   return False
   
-      
+def send_fund_reminder_email(user_id):
+  data = { 'class': 'UserMailer', 'args':[ 'fund_reminder', user_id ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
+  

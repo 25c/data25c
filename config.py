@@ -20,6 +20,7 @@ SETTINGS = {
     'DATABASE_URL': 'tcp://superuser@localhost/data25c_development',
     'DATABASE_WEB_URL': 'tcp://superuser@localhost/web25c_development',
     'REDIS_URL': 'redis://localhost:6379/',
+    'REDIS_WEB_URL': 'redis://localhost:6379/',
     'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
     'FACEBOOK_NAMESPACE': 'twentyfivec-dev'
   },
@@ -29,6 +30,7 @@ SETTINGS = {
     'DATABASE_URL': 'tcp://superuser@localhost/data25c_test',
     'DATABASE_WEB_URL': 'tcp://superuser@localhost/web25c_test',
     'REDIS_URL': 'redis://localhost:6379/',
+    'REDIS_WEB_URL': 'redis://localhost:6379/',
     'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
     'FACEBOOK_NAMESPACE': 'twentyfivec-dev'
   },
@@ -52,6 +54,8 @@ if 'DATABASE_WEB_URL' in environ:
   SETTINGS['DATABASE_WEB_URL'] = environ['DATABASE_WEB_URL']
 if 'REDISTOGO_URL' in environ:
   SETTINGS['REDIS_URL'] = environ['REDISTOGO_URL']
+if 'REDISTOGO_WEB_URL' in environ:
+  SETTINGS['REDIS_WEB_URL'] = environ['REDISTOGO_WEB_URL']
 if 'FACEBOOK_APP_TOKEN' in environ:
   SETTINGS['FACEBOOK_APP_TOKEN'] = environ['FACEBOOK_APP_TOKEN']
 

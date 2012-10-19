@@ -14,6 +14,7 @@ class TestClickFunctions(unittest.TestCase):
     self.pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
     self.pg_data = pg_connect(SETTINGS['DATABASE_URL'])
     self.redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
+    self.redis_web = redis.StrictRedis.from_url(SETTINGS['REDIS_WEB_URL'])
     # turn on autocommit
     self.pg_data.autocommit = True
     self.pg_web.autocommit = True
@@ -34,10 +35,42 @@ class TestClickFunctions(unittest.TestCase):
     share_users = json.dumps([{'user':result[0],'share_amount':10}])
     cursor.execute("UPDATE buttons SET share_users=%s WHERE uuid=%s", (share_users, "92d1cdb0f60c012f5f3960c5470a09c8",))
     
+    # clear the redis/resque mail queue
+    self.redis_web.delete('resque:queue:mailer')
+    
   def tearDown(self):
     self.pg_data.close()
     self.pg_web.close()
     self.redis_data.connection_pool.disconnect()
+    self.redis_web.connection_pool.disconnect()
+    
+  def test_send_fund_reminder_email(self):
+    cursor_data = self.pg_data.cursor()
+    cursor_web = self.pg_web.cursor()
+    
+    # assert starting balance
+    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual(0, result[0])
+    self.assertEqual(0, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual(0, self.redis_web.llen('resque:queue:mailer'))
+    
+    # insert a valid click
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":1000, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    
+    # assert ending balance and click presence
+    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual(1000000000, result[0])
+    self.assertEqual(1000000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))    
+    cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
+    result = cursor_data.fetchone()
+    self.assertTupleEqual((1, 659867728, None, 1000000000), result)
+    self.assertEqual(1, self.redis_web.llen('resque:queue:mailer'))
+    data = json.loads(self.redis_web.lindex('resque:queue:mailer', 0))
+    self.assertEqual(568334, data['args'][1])
     
   def test_validate_click(self):    
     # invalid user_id
