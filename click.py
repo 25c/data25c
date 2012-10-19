@@ -113,13 +113,14 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     # check if we need to delete/re-publish facebook action
     if amount > 0 and old_amount == 0 and facebook_uid is not None:
       # republish facebook action
-      publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname)
+      fb_action_id = publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname)
     elif amount == 0 and old_amount > 0 and fb_action_id is not None:
       # delete facebook action
-      delete_facebook_action(uuid, fb_action_id)
+      if delete_facebook_action(uuid, fb_action_id):
+        fb_action_id = None
       
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE id=%s", (state, amount, datetime.utcnow(), click_id))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, fb_action_id, datetime.utcnow(), click_id))
     if share_users is not None:
       # iterate over and update share amount
       try:
@@ -345,6 +346,9 @@ def delete_facebook_action(uuid, fb_action_id):
     graph = facebook.GraphAPI(SETTINGS['FACEBOOK_APP_TOKEN'])
     try:
       graph.delete_object(fb_action_id)
+      return True
     except:
       logger.exception(uuid + ':could not delete Facebook action with fb_action_id=' + str(fb_action_id))
+  return False
+  
       
