@@ -73,19 +73,23 @@ def process_queue():
   # process message
   process_message(message[1])
   
+def enqueue_url(url):
+  logger.info("Enqueueing: %s", url)
+  redis_data.lpush('QUEUE_SCRAPER', json.dumps({ 'url': url }))
+  
 def rescrape_all():
   try:
     pg_data = pg_connect(SETTINGS['DATABASE_URL'])
     cursor = pg_data.cursor()
     cursor.execute("SELECT DISTINCT(referrer) FROM clicks")
     for row in cursor:
-      redis_data.lpush('QUEUE_SCRAPER', json.dumps({ 'url': row[0] }))
-      logger.info("Enqueueing: %s", row[0])
+      enqueue_url(row[0])
   except:
     logger.exception('Unexpected exception re-enqueing referrer urls for scraping')
   finally:
     cursor.close()
     pg_data.commit()
+    pg_data.close()
     
 if __name__ == '__main__':
   logger.info("Starting scraper...")

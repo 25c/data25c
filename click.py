@@ -7,6 +7,7 @@ import json
 import logging
 import psycopg2
 import redis
+import scraper
 import sys
 import uuid as uuid_mod
 
@@ -274,9 +275,14 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
           logger.exception(uuid + ':unable to store fb_action_id, deleting')
           delete_facebook_action(uuid, fb_action_id)
           fb_action_id = None
-    data_cursor.close()
-    data_cursor = None
+    # check if a title exists for the referrer url, if any
+    data_cursor.execute("SELECT updated_at FROM titles WHERE url=%s", (referrer,))
+    result = data_cursor.fetchone()
+    title_updated_at = None
+    if result is not None:
+      title_updated_at = result[0]
     # prepare tpc transaction
+    data_cursor = None
     pg_data.tpc_prepare()
     try:
       # update user balance
@@ -306,6 +312,10 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
           # send funding reminder, if necessary
           if balance < 1000000000 and new_balance >= 1000000000:
             send_fund_reminder_email(user_id)
+          # enqueue url scrape on referrer if necessary
+          # TODO also enqueue if older than a certain age
+          if title_updated_at is None:
+            scraper.enqueue_url(referrer)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
