@@ -335,6 +335,20 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
       data_cursor.close()
     pg_data.tpc_rollback()
     delete_facebook_action(uuid, fb_action_id)
+    
+def insert_title(url, title):
+  try:
+    now = datetime.utcnow()
+    data_cursor = pg_data.cursor()
+    data_cursor.execute("INSERT INTO titles (url, title, updated_at, created_at) VALUES (%s, %s, %s, %s)", (url, title, now, now))
+  except psycopg2.IntegrityError:
+    pg_data.commit()    
+    data_cursor.execute("UPDATE titles SET title=%s, updated_at=%s WHERE url=%s", (title, now, url))
+  except:
+    logger.exception("Unable to insert (url, title)=(%s, %s)", url, title)
+  finally:    
+    data_cursor.close()
+    pg_data.commit()
 
 def publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname):
   graph = facebook.GraphAPI(SETTINGS['FACEBOOK_APP_TOKEN'])
