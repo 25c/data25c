@@ -22,6 +22,7 @@ class TestClickFunctions(unittest.TestCase):
     # always start with an empty click database
     cursor = self.pg_data.cursor()
     cursor.execute('DELETE FROM clicks;')
+    cursor.execute('DELETE FROM titles;')
     cursor.close()
     
     # make sure the test click user starts with 0 balance
@@ -37,6 +38,8 @@ class TestClickFunctions(unittest.TestCase):
     
     # clear the redis/resque mail queue
     self.redis_web.delete('resque:queue:mailer')
+    # clear the url scrape queue
+    self.redis_data.delete('QUEUE_SCRAPER')
     
   def tearDown(self):
     self.pg_data.close()
@@ -140,6 +143,12 @@ class TestClickFunctions(unittest.TestCase):
     cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
     self.assertTupleEqual((1, 659867728, None, 25000000), result)
+    # should also be a request to scrape url title
+    self.assertEqual(1, self.redis_data.llen('QUEUE_SCRAPER'))
+    
+    # insert a dummy title and clear the queue, as if the scraper had completed
+    cursor_data.execute("INSERT INTO titles (url, title, updated_at, created_at) VALUES (%s, %s, %s, %s)", (data['referrer'], 'Title', datetime.now(), datetime.now()))
+    self.redis_data.delete('QUEUE_SCRAPER')
     
     # try inserting again, should overwrite and end up with same result
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
@@ -151,6 +160,9 @@ class TestClickFunctions(unittest.TestCase):
     result = cursor_data.fetchone()
     self.assertTupleEqual((1, 659867728, None, 25000000), result)
     
+    # should no longer be inserting scrape requests...
+    self.assertEqual(0, self.redis_data.llen('QUEUE_SCRAPER'))
+  
     # try inserting with an earlier timestamp, should be ignored
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":0, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:18.882Z"}'
     data = json.loads(message)
