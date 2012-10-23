@@ -37,7 +37,8 @@ class Scraper:
 def scrape(url):
   try:
     # open url
-    html = urllib2.urlopen(url).read()
+    request = urllib2.Request(url, None, { 'User-Agent': 'twentyfivec/1.0 (https://www.25c.com/)' })
+    html = urllib2.urlopen(request).read()
   except:
     logger.exception("%s: unable to download", url)
     # TODO re-enqueue for retry
