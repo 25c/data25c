@@ -276,7 +276,7 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
           delete_facebook_action(uuid, fb_action_id)
           fb_action_id = None
     # check if a title exists for the referrer url, if any
-    data_cursor.execute("SELECT updated_at FROM titles WHERE url=%s", (referrer,))
+    data_cursor.execute("SELECT updated_at FROM urls WHERE url=%s", (referrer,))
     result = data_cursor.fetchone()
     title_updated_at = None
     if result is not None:
@@ -350,10 +350,10 @@ def insert_title(url, title):
   try:
     now = datetime.utcnow()
     data_cursor = pg_data.cursor()
-    data_cursor.execute("INSERT INTO titles (url, title, updated_at, created_at) VALUES (%s, %s, %s, %s)", (url, title, now, now))
+    data_cursor.execute("INSERT INTO urls (uuid, url, title, updated_at, created_at) VALUES (%s, %s, %s, %s, %s)", (uuid_mod.uuid4().hex, url, title, now, now))
   except psycopg2.IntegrityError:
     pg_data.commit()    
-    data_cursor.execute("UPDATE titles SET title=%s, updated_at=%s WHERE url=%s", (title, now, url))
+    data_cursor.execute("UPDATE urls SET title=%s, updated_at=%s WHERE url=%s", (title, now, url))
   except:
     logger.exception("Unable to insert (url, title)=(%s, %s)", url, title)
   finally:    

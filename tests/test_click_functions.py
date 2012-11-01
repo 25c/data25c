@@ -4,6 +4,7 @@ import isodate
 import json
 import redis
 import unittest
+import uuid
 
 import api
 import click
@@ -22,7 +23,7 @@ class TestClickFunctions(unittest.TestCase):
     # always start with an empty click database
     cursor = self.pg_data.cursor()
     cursor.execute('DELETE FROM clicks;')
-    cursor.execute('DELETE FROM titles;')
+    cursor.execute('DELETE FROM urls;')
     cursor.close()
     
     # make sure the test click user starts with 0 balance
@@ -147,7 +148,7 @@ class TestClickFunctions(unittest.TestCase):
     self.assertEqual(1, self.redis_data.llen('QUEUE_SCRAPER'))
     
     # insert a dummy title and clear the queue, as if the scraper had completed
-    cursor_data.execute("INSERT INTO titles (url, title, updated_at, created_at) VALUES (%s, %s, %s, %s)", (data['referrer'], 'Title', datetime.now(), datetime.now()))
+    cursor_data.execute("INSERT INTO urls (uuid, url, title, updated_at, created_at) VALUES (%s, %s, %s, %s, %s)", (uuid.uuid4().hex, data['referrer'], 'Title', datetime.now(), datetime.now()))
     self.redis_data.delete('QUEUE_SCRAPER')
     
     # try inserting again, should overwrite and end up with same result
