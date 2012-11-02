@@ -121,6 +121,15 @@ class TestClickFunctions(unittest.TestCase):
     self.assertEqual(659867728, result[7][0]['user']) 
     self.assertEqual(10, result[7][0]['share_amount']) 
     
+    # valid click, no referrer, with url- should return user_id and button_id for uuids, a new url_id for url
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/thisisfrancis", "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
+    data = json.loads(message)
+    result = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'])
+    self.assertTupleEqual((568334, None, 702273458), result[0:3])
+    self.assertIsNotNone(result[3])
+    self.assertTupleEqual((None, 659867728, 'mrjingles', None), result[4:])
+    
+    
   def test_insert_click(self):
     cursor_data = self.pg_data.cursor()
     cursor_web = self.pg_web.cursor()
@@ -131,8 +140,8 @@ class TestClickFunctions(unittest.TestCase):
     self.assertEqual(0, result[0])
     self.assertEqual(0, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
     
-    # insert a valid click
-    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
+    # insert a valid click, with a url different than referrer url
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     
@@ -144,10 +153,16 @@ class TestClickFunctions(unittest.TestCase):
     cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
     self.assertTupleEqual((1, 659867728, None, 25000000), result)
-    # should also be a request to scrape url title
-    self.assertEqual(1, self.redis_data.llen('QUEUE_SCRAPER'))
+    # should be a url_id assigned to the url now
+    cursor_data.execute('SELECT url_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
+    result = cursor_data.fetchone()
+    url_id = result[0]
+    self.assertIsNotNone(url_id)
+    # should also be two requests to scrape url title (for url, for referrer)
+    self.assertEqual(2, self.redis_data.llen('QUEUE_SCRAPER'))
     
-    # insert a dummy title and clear the queue, as if the scraper had completed
+    # insert dummy titles and clear the queue, as if the scraper had completed
+    cursor_data.execute("UPDATE urls SET title=%s WHERE url=%s", ('Test Title', data['url']))
     cursor_data.execute("INSERT INTO urls (uuid, url, title, updated_at, created_at) VALUES (%s, %s, %s, %s, %s)", (uuid.uuid4().hex, data['referrer'], 'Title', datetime.now(), datetime.now()))
     self.redis_data.delete('QUEUE_SCRAPER')
     
@@ -165,7 +180,7 @@ class TestClickFunctions(unittest.TestCase):
     self.assertEqual(0, self.redis_data.llen('QUEUE_SCRAPER'))
   
     # try inserting with an earlier timestamp, should be ignored
-    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":0, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:18.882Z"}'
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":0, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:18.882Z"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
@@ -181,7 +196,7 @@ class TestClickFunctions(unittest.TestCase):
     result = cursor_data.fetchone()
     self.assertEqual(1, result[0])
     
-    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":0, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:20.882Z"}'
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":0, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:20.882Z"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
@@ -194,7 +209,7 @@ class TestClickFunctions(unittest.TestCase):
     self.assertTupleEqual((5, 659867728, None, 0), result)
     
     # insert AGAIN, with positive amount, verify state change
-    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":1234, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:22.882Z"}'
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":1234, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:22.882Z"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
@@ -205,6 +220,20 @@ class TestClickFunctions(unittest.TestCase):
     cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
     self.assertTupleEqual((1, 659867728, None, 1234000000), result)
+    
+    # insert a new click with a new uuid, but should still have the same url_id
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc0", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    # assert ending balance and click presence
+    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual(1259000000, result[0])
+    self.assertEqual(1259000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))    
+    # should be the same url_id 
+    cursor_data.execute('SELECT url_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc0",))
+    result = cursor_data.fetchone()
+    self.assertEqual(url_id, result[0])
     
   def test_insert_and_update_click_with_share(self):
     cursor_data = self.pg_data.cursor()

@@ -63,14 +63,23 @@ def validate_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid):
     # validate url
     url_id = None
     if url is not None:
-      cursor.execute("SELECT id FROM urls WHERE url=%s", (url,))
-      result = cursor.fetchone()
-      if result is None:
-        # insert and enqueue for scrape
-        now = datetime.utcnow()
-        cursor.execute("INSERT INTO urls (uuid, url, created_at, updated_at) VALUES (%s, %s, %s, %s) RETURNING id", (uuid_mod.uuid4().hex, url, now, now))
-        result = cursor.fetchone()
-      url_id = result[0]
+      cursor_data = None
+      try:
+        pg_data.autocommit = True
+        cursor_data = pg_data.cursor()
+        cursor_data.execute("SELECT id FROM urls WHERE url=%s", (url,))
+        result = cursor_data.fetchone()
+        if result is None:
+          # insert and enqueue for scrape
+          now = datetime.utcnow()
+          cursor_data.execute("INSERT INTO urls (uuid, url, created_at, updated_at) VALUES (%s, %s, %s, %s) RETURNING id", (uuid_mod.uuid4().hex, url, now, now))
+          result = cursor_data.fetchone()
+          scraper.enqueue_url(url)
+        url_id = result[0]
+      finally:
+        pg_data.autocommit = False
+        if cursor_data is not None:
+          cursor_data.close()
   
     # validate referrer user uuid, if present
     referrer_user_id = None
