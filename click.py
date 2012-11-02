@@ -11,6 +11,7 @@ import scraper
 import sys
 import uuid as uuid_mod
 
+
 # initialize logger
 logging.basicConfig()
 logger = logging.getLogger('click')
