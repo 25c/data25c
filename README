@@ -37,6 +37,7 @@ Now install the specified dependencies using pip:
 
 $ pip install -r requirements.txt
 
+
 Migrations
 ==========
 
@@ -49,6 +50,7 @@ Replace the database url if necessary.  For deployments:
 $ heroku run yoyo-migrate --verbosity=3 -b apply ./migrations \$DATABASE_URL --app data25c-stage
 
 Replace app as necessary
+
 
 Testing
 =======
