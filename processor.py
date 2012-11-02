@@ -34,7 +34,7 @@ def process_message(message):
     return
     
   # insert
-  click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+  click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     
 def process_queue():
   # block and wait for click data, pushing into processing queue

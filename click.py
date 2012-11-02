@@ -30,7 +30,7 @@ pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
 redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
 redis_web = redis.StrictRedis.from_url(SETTINGS['REDIS_WEB_URL'])
   
-def validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid):
+def validate_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid):
   cursor = None
   try:
     pg_web.autocommit = True
@@ -59,6 +59,18 @@ def validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid):
     if user_id == button_user_id:
       logger.warn(uuid + ':invalid user_uuid=' + user_uuid + ' is owner of button_uuid=' + button_uuid)
       return
+      
+    # validate url
+    url_id = None
+    if url is not None:
+      cursor.execute("SELECT id FROM urls WHERE url=%s", (url,))
+      result = cursor.fetchone()
+      if result is None:
+        # insert and enqueue for scrape
+        now = datetime.utcnow()
+        cursor.execute("INSERT INTO urls (uuid, url, created_at, updated_at) VALUES (%s, %s, %s, %s) RETURNING id", (uuid_mod.uuid4().hex, url, now, now))
+        result = cursor.fetchone()
+      url_id = result[0]
   
     # validate referrer user uuid, if present
     referrer_user_id = None
@@ -80,7 +92,7 @@ def validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid):
         pass
         
     # return user/button/referrer ids
-    return (user_id, facebook_uid, button_id, referrer_user_id, button_user_id, button_user_nickname, share)
+    return (user_id, facebook_uid, button_id, url_id, referrer_user_id, button_user_id, button_user_nickname, share)
   finally:
     if cursor is not None:
       cursor.close()
@@ -225,17 +237,18 @@ def undo_click(uuid):
     if button_user_id is not None and button_user_nickname is not None:
       update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, 0, datetime.utcnow())
   
-def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
-  ids = validate_click(uuid, user_uuid, button_uuid, referrer_user_uuid)
+def insert_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
+  ids = validate_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid)
   if ids is None:
     return
   user_id = ids[0]
   facebook_uid = ids[1]
   button_id = ids[2]
-  referrer_user_id = ids[3]
-  button_user_id = ids[4]
-  button_user_nickname = ids[5]
-  share_users = ids[6]
+  url_id = ids[3]
+  referrer_user_id = ids[4]
+  button_user_id = ids[5]
+  button_user_nickname = ids[6]
+  share_users = ids[7]
   
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
   xid_web = uuid + '-' + str(created_at) + '-insert-user'
@@ -248,21 +261,21 @@ def insert_click(uuid, user_uuid, button_uuid, referrer_user_uuid, amount, ip_ad
     # attempt insert 
     if share_users is None:
       # no share, so just insert this click with the button owner as the receiver of the full amount
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
       result = data_cursor.fetchone()
       click_id = result[0]
     else:
       # first insert the click with the full amount and no receiver- this will be the parent click
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
       result = data_cursor.fetchone()
       click_id = result[0]
       # create a click for each user in the share, giving them their amount
       remainder = 100
       for share in share_users:
-        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, share['user'], amount * share['share_amount'] / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
         remainder -= share['share_amount']
       # finally, give the remainder to the button owner
-      data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
     logger.info(uuid + ':inserted')
     # publish a facebook timeline action, if connected, and save resulting id with click
     fb_action_id = None
