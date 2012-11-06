@@ -31,7 +31,7 @@ pg_web = pg_connect(SETTINGS['DATABASE_WEB_URL'])
 redis_data = redis.StrictRedis.from_url(SETTINGS['REDIS_URL'])
 redis_web = redis.StrictRedis.from_url(SETTINGS['REDIS_WEB_URL'])
   
-def validate_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid):
+def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_user_uuid):
   cursor = None
   try:
     pg_web.autocommit = True
@@ -247,8 +247,8 @@ def undo_click(uuid):
     if button_user_id is not None and button_user_nickname is not None:
       update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, 0, datetime.utcnow())
   
-def insert_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
-  ids = validate_click(uuid, user_uuid, button_uuid, url, referrer_user_uuid)
+def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
+  ids = validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_user_uuid)
   if ids is None:
     return
   user_id = ids[0]
