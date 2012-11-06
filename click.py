@@ -81,6 +81,24 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
         pg_data.autocommit = False
         if cursor_data is not None:
           cursor_data.close()
+
+    # validate comment uuid, if present
+    comment_id = None
+    if comment_uuid is not None:
+      cursor_data = None
+      try:
+        pg_data.autocommit = True
+        cursor_data = pg_data.cursor()
+        cursor_data.execute("SELECT id FROM comments WHERE LOWER(uuid)=LOWER(%s)", (comment_uuid,))
+        result = cursor_data.fetchone()
+        if result is not None:
+          comment_id = result[0]
+        else:
+          logger.warn(uuid + ':invalid comment_uuid=' + str(comment_uuid))
+      finally:
+        pg_data.autocommit = False
+        if cursor_data is not None:
+          cursor_data.close()
   
     # validate referrer user uuid, if present
     referrer_user_id = None
@@ -102,7 +120,7 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
         pass
         
     # return user/button/referrer ids
-    return (user_id, facebook_uid, button_id, url_id, referrer_user_id, button_user_id, button_user_nickname, share)
+    return (user_id, facebook_uid, button_id, url_id, comment_id, referrer_user_id, button_user_id, button_user_nickname, share)
   finally:
     if cursor is not None:
       cursor.close()
@@ -255,10 +273,11 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
   facebook_uid = ids[1]
   button_id = ids[2]
   url_id = ids[3]
-  referrer_user_id = ids[4]
-  button_user_id = ids[5]
-  button_user_nickname = ids[6]
-  share_users = ids[7]
+  comment_id = ids[4]
+  referrer_user_id = ids[5]
+  button_user_id = ids[6]
+  button_user_nickname = ids[7]
+  share_users = ids[8]
   
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
   xid_web = uuid + '-' + str(created_at) + '-insert-user'
