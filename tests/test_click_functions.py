@@ -271,6 +271,15 @@ class TestClickFunctions(unittest.TestCase):
     result = cursor_data.fetchone()    
     self.assertTupleEqual(("04516c50-0aa2-0130-6095-60c5470a09c8", 568334, 702273458, url_id, "This is a modified test comment."), result)
     
+    # now insert a new tip on the same comment from a different user
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc2", "user_uuid":"4b7172007941012f5e2f60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount']*1000000, data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    # should be the same comment id
+    cursor_data.execute('SELECT comment_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc2",))
+    result = cursor_data.fetchone()    
+    self.assertEqual(comment_id, result[0])
+    
   def test_insert_and_update_click_with_share(self):
     cursor_data = self.pg_data.cursor()
     cursor_web = self.pg_web.cursor()
