@@ -84,15 +84,17 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
 
     # validate comment uuid, if present
     comment_id = None
+    comment_user_id = None
     if comment_uuid is not None:
       cursor_data = None
       try:
         pg_data.autocommit = True
         cursor_data = pg_data.cursor()
-        cursor_data.execute("SELECT id FROM comments WHERE LOWER(uuid)=LOWER(%s)", (comment_uuid,))
+        cursor_data.execute("SELECT id, user_id FROM comments WHERE LOWER(uuid)=LOWER(%s)", (comment_uuid,))
         result = cursor_data.fetchone()
         if result is not None:
           comment_id = result[0]
+          comment_user_id = result[1]
         else:
           logger.warn(uuid + ':invalid comment_uuid=' + str(comment_uuid))
       finally:
@@ -120,13 +122,13 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
         pass
         
     # return user/button/referrer ids
-    return (user_id, facebook_uid, button_id, url_id, comment_id, referrer_user_id, button_user_id, button_user_nickname, share)
+    return (user_id, facebook_uid, button_id, url_id, comment_id, comment_user_id, referrer_user_id, button_user_id, button_user_nickname, share)
   finally:
     if cursor is not None:
       cursor.close()
     pg_web.autocommit = False
   
-def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, amount, created_at):
+def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at):
   xid_data = uuid + '-' + str(created_at) + '-update-click'
   xid_web = uuid + '-' + str(created_at) + '-update-user'
   data_cursor = None
@@ -135,6 +137,9 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     # start tpc transaction on data
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
+    # update comment, if applicable
+    if comment_id is not None and user_id == comment_user_id and comment_text is not None:
+      data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, datetime.utcnow(), comment_id))
     # get previous value
     data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
     result = data_cursor.fetchone()
@@ -263,7 +268,7 @@ def undo_click(uuid):
       cursor.close()
       pg_web.autocommit = False
     if button_user_id is not None and button_user_nickname is not None:
-      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, 0, datetime.utcnow())
+      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, None, None, None, 0, datetime.utcnow())
   
 def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
   ids = validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_user_uuid)
@@ -274,10 +279,11 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
   button_id = ids[2]
   url_id = ids[3]
   comment_id = ids[4]
-  referrer_user_id = ids[5]
-  button_user_id = ids[6]
-  button_user_nickname = ids[7]
-  share_users = ids[8]
+  comment_user_id = ids[5]
+  referrer_user_id = ids[6]
+  button_user_id = ids[7]
+  button_user_nickname = ids[8]
+  share_users = ids[9]
   
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
   xid_web = uuid + '-' + str(created_at) + '-insert-user'
@@ -287,15 +293,22 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     # start tpc transaction on data
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
+    # insert comment, if any
+    if comment_id is None and comment_text is not None:
+      # insert
+      now = datetime.utcnow()
+      data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, comment_text, now, now))
+      result = data_cursor.fetchone()
+      comment_id = result[0]
     # attempt insert 
     if share_users is None:
       # no share, so just insert this click with the button owner as the receiver of the full amount
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
       result = data_cursor.fetchone()
       click_id = result[0]
     else:
       # first insert the click with the full amount and no receiver- this will be the parent click
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
       result = data_cursor.fetchone()
       click_id = result[0]
       # create a click for each user in the share, giving them their amount
@@ -378,7 +391,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     if data_cursor is not None:
       data_cursor.close()
     pg_data.tpc_rollback()
-    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, amount, created_at)
+    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
   except:
     e = sys.exc_info()[1]
     logger.exception(uuid + ':' + str(e))
