@@ -196,7 +196,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
         raise Exception(uuid + ':invalid user_id=' + user_id)
       user_uuid = result[0]
       balance = result[1] - old_amount + amount
-      web_cursor.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
+      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (balance, datetime.utcnow(), user_id))
       web_cursor.close()
       web_cursor = None
       # prepare tpc transaction on web
@@ -351,7 +351,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
       user_uuid = result[0]
       balance = result[1]
       new_balance = balance + amount
-      web_cursor.execute("UPDATE users SET balance=%s WHERE id=%s", (new_balance, user_id))
+      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (new_balance, datetime.utcnow(), user_id))
       web_cursor.close()
       web_cursor = None
       # prepare tpc transaction on web

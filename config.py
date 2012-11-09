@@ -22,7 +22,8 @@ SETTINGS = {
     'REDIS_URL': 'redis://localhost:6379/',
     'REDIS_WEB_URL': 'redis://localhost:6379/',
     'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
-    'FACEBOOK_NAMESPACE': 'twentyfivec-dev'
+    'FACEBOOK_NAMESPACE': 'twentyfivec-dev',
+    'STRIPE_API_KEY': 'sk_test_9GECsLndO8PHDgQcAnRIIFFL'
   },
   'test': {
     'URL_BASE_WEB': 'http://tunnel.plus25c.com',
@@ -32,7 +33,8 @@ SETTINGS = {
     'REDIS_URL': 'redis://localhost:6379/',
     'REDIS_WEB_URL': 'redis://localhost:6379/',
     'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
-    'FACEBOOK_NAMESPACE': 'twentyfivec-dev'
+    'FACEBOOK_NAMESPACE': 'twentyfivec-dev',
+    'STRIPE_API_KEY': 'sk_test_9GECsLndO8PHDgQcAnRIIFFL'
   },
   'staging': {
     # most set from heroku config environment variables below
@@ -58,6 +60,8 @@ if 'REDISTOGO_WEB_URL' in environ:
   SETTINGS['REDIS_WEB_URL'] = environ['REDISTOGO_WEB_URL']
 if 'FACEBOOK_APP_TOKEN' in environ:
   SETTINGS['FACEBOOK_APP_TOKEN'] = environ['FACEBOOK_APP_TOKEN']
+if 'STRIPE_API_KEY' in environ:
+  SETTINGS['STRIPE_API_KEY'] = environ['STRIPE_API_KEY']
 
 SETTINGS['PYTHON_ENV'] = environ['PYTHON_ENV'] if 'PYTHON_ENV' in environ else 'development'
 SETTINGS['AIRBRAKE_API_KEY'] = '25f60a0bcd9cc454806be6824028a900'

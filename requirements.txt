@@ -9,6 +9,8 @@ isodate==0.4.8
 lxml==3.0.1
 psycopg2==2.4.5
 redis==2.6.2
+requests==0.13.2
+stripe==1.7.5
 wsgiref==0.1.2
 xmlbuilder==0.9
 yoyo-migrations==4.1.6
