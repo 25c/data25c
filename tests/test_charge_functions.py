@@ -117,6 +117,11 @@ class TestChargeFunctions(unittest.TestCase):
     cursor_data.execute("SELECT COUNT(*) FROM clicks WHERE user_id=%s AND state=2 AND payment_id=%s", (568334, payment_id))
     result = cursor_data.fetchone()
     self.assertEqual(10, result[0])
+    
+    # invoice email should be queued up
+    self.assertEqual(1, self.redis_web.llen('resque:queue:mailer'))
+    data = json.loads(self.redis_web.lindex('resque:queue:mailer', 0))
+    self.assertEqual(['new_invoice', 568334, payment_id], data['args'])
         
 if __name__ == '__main__':
   unittest.main()

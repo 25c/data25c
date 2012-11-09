@@ -2,6 +2,7 @@ from airbrakepy.logging.handlers import AirbrakeHandler
 from config import SETTINGS, pg_connect
 from datetime import datetime, timedelta
   
+import json
 import logging
 import psycopg2
 import redis
@@ -38,6 +39,10 @@ def get_user_ids():
   cursor_web.close()
   pg_web.commit()
   return results
+  
+def send_invoice_email(user_id, payment_id):
+  data = { 'class': 'UserMailer', 'args':[ 'new_invoice', user_id, payment_id ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
   
 def charge_user(user_id):
   xid_data = str(user_id) + '-' + str(datetime.utcnow()) + '-process-click'
@@ -108,6 +113,7 @@ def charge_user(user_id):
         try:
           logger.info("%s:charge completed" % (user_id,))
           # send email invoice
+          send_invoice_email(user_id, payment_id)
         except:
           logger.exception("%s:unexpected exception sending email after successful charge" % (user_id,))
       except:
