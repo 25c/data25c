@@ -128,9 +128,10 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
       cursor.close()
     pg_web.autocommit = False
   
-def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at):
-  xid_data = uuid + '-' + str(created_at) + '-update-click'
-  xid_web = uuid + '-' + str(created_at) + '-update-user'
+def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, counter):
+  updated_at = datetime.utcnow()
+  xid_data = uuid + '-' + str(updated_at) + '-update-click'
+  xid_web = uuid + '-' + str(updated_at) + '-update-user'
   data_cursor = None
   web_cursor = None
   try:
@@ -139,9 +140,9 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     data_cursor = pg_data.cursor() 
     # update comment, if applicable
     if comment_id is not None and user_id == comment_user_id and comment_text is not None:
-      data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, datetime.utcnow(), comment_id))
+      data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, updated_at, comment_id))
     # get previous value
-    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
+    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND counter<%s FOR UPDATE", (uuid, counter))
     result = data_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':click not found')
@@ -185,16 +186,16 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
         fb_action_id = None
       
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, fb_action_id, datetime.utcnow(), click_id))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, fb_action_id, updated_at, click_id))
     if share_users is not None:
       # iterate over and update share amount
       try:
         share_users = json.loads(share_users)
         remainder = 100
         for share in share_users:
-          data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*share['share_amount']/100, datetime.utcnow(), click_id, share['user']))
+          data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*share['share_amount']/100, updated_at, click_id, share['user']))
           remainder -= share['share_amount']
-        data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*remainder/100, datetime.utcnow(), click_id, button_user_id))
+        data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*remainder/100, updated_at, click_id, button_user_id))
       except ValueError:
         logger.exception(uuid + ': could not parse revenue share definition')
         
@@ -214,7 +215,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
         raise Exception(uuid + ':invalid user_id=' + user_id)
       user_uuid = result[0]
       balance = result[1] - old_amount + amount
-      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (balance, datetime.utcnow(), user_id))
+      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (balance, updated_at, user_id))
       web_cursor.close()
       web_cursor = None
       # prepare tpc transaction on web
@@ -253,22 +254,24 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
 def undo_click(uuid):  
   user_id = None
   button_id = None
+  counter = None
   try:
     pg_data.autocommit = True
     cursor = pg_data.cursor()
-    # get user id and button id from click
-    cursor.execute("SELECT user_id, button_id FROM clicks WHERE LOWER(uuid) = LOWER(%s)", (uuid,))
+    # get user id and button id and current counter from click
+    cursor.execute("SELECT user_id, button_id, counter FROM clicks WHERE LOWER(uuid) = LOWER(%s)", (uuid,))
     result = cursor.fetchone()
     if result is None:
       logger.warn(uuid + ':invalid, not found')
       return
     user_id = result[0]
     button_id = result[1]
+    counter = result[2]
   finally:
     cursor.close()
     pg_data.autocommit = False
     
-  if user_id is not None and button_id is not None:
+  if user_id is not None and button_id is not None and counter is not None:
     try:
       pg_web.autocommit = True
       cursor = pg_web.cursor()
@@ -289,9 +292,9 @@ def undo_click(uuid):
       cursor.close()
       pg_web.autocommit = False
     if button_user_id is not None and button_user_nickname is not None:
-      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, None, None, None, 0, datetime.utcnow())
+      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, None, None, None, 0, counter+1)
   
-def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
+def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, referrer_user_uuid, amount, ip_address, user_agent, referrer, counter):
   ids = validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_user_uuid)
   if ids is None:
     return
@@ -305,6 +308,8 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
   button_user_id = ids[7]
   button_user_nickname = ids[8]
   share_users = ids[9]
+  created_at = datetime.utcnow()
+  updated_at = created_at
   
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
   xid_web = uuid + '-' + str(created_at) + '-insert-user'
@@ -317,21 +322,21 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     # attempt insert 
     if share_users is None:
       # no share, so just insert this click with the button owner as the receiver of the full amount
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, counter, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, counter, created_at, updated_at))
       result = data_cursor.fetchone()
       click_id = result[0]
     else:
       # first insert the click with the full amount and no receiver- this will be the parent click
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, counter, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), counter, created_at, updated_at))
       result = data_cursor.fetchone()
       click_id = result[0]
       # create a click for each user in the share, giving them their amount
       remainder = 100
       for share in share_users:
-        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, updated_at))
         remainder -= share['share_amount']
       # finally, give the remainder to the button owner
-      data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+      data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, updated_at))
     # insert comment, if any
     if comment_id is None and comment_text is not None:
       # insert
@@ -374,7 +379,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
       user_uuid = result[0]
       balance = result[1]
       new_balance = balance + amount
-      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (new_balance, datetime.utcnow(), user_id))
+      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (new_balance, updated_at, user_id))
       web_cursor.close()
       web_cursor = None
       # prepare tpc transaction on web
@@ -414,7 +419,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     if data_cursor is not None:
       data_cursor.close()
     pg_data.tpc_rollback()
-    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
+    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, counter)
   except:
     e = sys.exc_info()[1]
     logger.exception(uuid + ':' + str(e))
