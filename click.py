@@ -1,6 +1,6 @@
 from airbrakepy.logging.handlers import AirbrakeHandler
 from config import SETTINGS, pg_connect
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import facebook
 import json
@@ -141,7 +141,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     if comment_id is not None and user_id == comment_user_id and comment_text is not None:
       data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, datetime.utcnow(), comment_id))
     # get previous value
-    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
+    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
     result = data_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':click not found')
@@ -156,6 +156,10 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       state = 5
     share_users = result[3]
     fb_action_id = result[4]
+    created_at = result[5]
+    # check if within 1 hour grace period
+    if created_at < (datetime.utcnow() - timedelta(hours=1)):
+      raise Exception(uuid + ':past edit/undo grace period for update')
     
     # check if this is a comment tip, and if we need to cascade an undo to subsequent comment promotion tips
     cascade_undo_uuids = []
