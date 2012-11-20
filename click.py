@@ -293,13 +293,6 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     # start tpc transaction on data
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
-    # insert comment, if any
-    if comment_id is None and comment_text is not None:
-      # insert
-      now = datetime.utcnow()
-      data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, comment_text, now, now))
-      result = data_cursor.fetchone()
-      comment_id = result[0]
     # attempt insert 
     if share_users is None:
       # no share, so just insert this click with the button owner as the receiver of the full amount
@@ -318,6 +311,15 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
         remainder -= share['share_amount']
       # finally, give the remainder to the button owner
       data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+    # insert comment, if any
+    if comment_id is None and comment_text is not None:
+      # insert
+      now = datetime.utcnow()
+      data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, click_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, click_id, comment_text, now, now))
+      result = data_cursor.fetchone()
+      comment_id = result[0]
+      # update click with comment id
+      data_cursor.execute("UPDATE clicks SET comment_id=%s WHERE id=%s", (comment_id, click_id))
     logger.info(uuid + ':inserted')
     # publish a facebook timeline action, if connected, and save resulting id with click
     fb_action_id = None

@@ -250,13 +250,14 @@ class TestClickFunctions(unittest.TestCase):
     result = cursor_data.fetchone()
     self.assertEqual(url_id, result[0])
     # should now be a comment in the database
-    cursor_data.execute('SELECT comment_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc1",))
+    cursor_data.execute('SELECT id, comment_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc1",))
+    result = cursor_data.fetchone()
+    click_id = result[0]    
+    self.assertIsNotNone(result[1])    
+    comment_id = result[1]
+    cursor_data.execute('SELECT uuid, user_id, button_id, url_id, click_id, content FROM comments WHERE id=%s', (comment_id,))
     result = cursor_data.fetchone()    
-    self.assertIsNotNone(result[0])
-    comment_id = result[0]
-    cursor_data.execute('SELECT uuid, user_id, button_id, url_id, content FROM comments WHERE id=%s', (comment_id,))
-    result = cursor_data.fetchone()    
-    self.assertTupleEqual(("04516c50-0aa2-0130-6095-60c5470a09c8", 568334, 702273458, url_id, "This is a test comment."), result)
+    self.assertTupleEqual(("04516c50-0aa2-0130-6095-60c5470a09c8", 568334, 702273458, url_id, click_id, "This is a test comment."), result)
     
     # now update that same click with a new amount and comment
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc1", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "comment_text": "This is a modified test comment.", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"2012-09-12T00:20:19.882Z"}'
