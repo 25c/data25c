@@ -157,6 +157,20 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     share_users = result[3]
     fb_action_id = result[4]
     
+    # check if this is a comment tip, and if we need to cascade an undo to subsequent comment promotion tips
+    cascade_undo_uuids = []
+    if amount == 0 and old_amount > 0 and comment_id is not None:
+      # check if this is the original commenter
+      data_cursor.execute("SELECT click_id FROM comments WHERE id=%s", (comment_id,))
+      result = data_cursor.fetchone()
+      if result is None:
+        raise Exception(uuid + ':click comment not found')
+      if result[0] == click_id:
+        # fetch all the click uuids to undo
+        data_cursor.execute("SELECT uuid FROM clicks WHERE comment_id=%s AND id<>%s", (comment_id, click_id))
+        for result in data_cursor:
+          cascade_undo_uuids.append(result[0])
+    
     # check if we need to delete/re-publish facebook action
     if amount > 0 and old_amount == 0 and facebook_uid is not None:
       # republish facebook action
@@ -209,6 +223,9 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
           logger.info(uuid + ':click updated, balance=' + str(balance) + ' for user_uuid=' + user_uuid)
           # update redis balance cache for user
           redis_data.set('user:' + user_uuid, balance)
+          # if any other clicks to undo, process them now
+          for uuid in cascade_undo_uuids:
+            undo_click(uuid)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
       except:
