@@ -142,7 +142,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     if comment_id is not None and user_id == comment_user_id and comment_text is not None:
       data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, updated_at, comment_id))
     # get previous value
-    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND counter<%s FOR UPDATE", (uuid, counter))
+    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id, url_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND counter<%s FOR UPDATE", (uuid, counter))
     result = data_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':click not found')
@@ -157,7 +157,8 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       state = 5
     share_users = result[3]
     fb_action_id = result[4]
-    created_at = result[5]
+    url_id = result[5]
+    created_at = result[6]
     # check if within 1 hour grace period
     if created_at < (datetime.utcnow() - timedelta(hours=1)):
       raise Exception(uuid + ':past edit/undo grace period for update')
@@ -231,6 +232,8 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
           # if any other clicks to undo, process them now
           for uuid in cascade_undo_uuids:
             undo_click(uuid)
+          # update redis widget data cache
+          update_widget(button_id, url_id)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
       except:
@@ -399,6 +402,8 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           # TODO also enqueue if older than a certain age
           if title_updated_at is None:
             scraper.enqueue_url(referrer)
+          # update redis widget data cache
+          update_widget(button_id, url_id)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
@@ -467,3 +472,81 @@ def send_fund_reminder_email(user_id):
   data = { 'class': 'UserMailer', 'args':[ 'fund_reminder', user_id ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
   
+def update_widget(widget_id, url_id):
+  if url_id is None:
+    return
+    
+  web_cursor = None
+  data_cursor = None
+  try:
+    web_cursor = pg_web.cursor()
+    web_cursor.execute("SELECT uuid,widget_type FROM buttons WHERE id=%s", (widget_id,))
+    result = web_cursor.fetchone()
+    if result is None:
+      raise Exception("Widget not found")
+    widget_uuid = result[0]
+    widget_type = result[1]
+    
+    data_cursor = pg_data.cursor()
+    data_cursor.execute("SELECT url FROM urls WHERE id=%s", (url_id,))
+    result = data_cursor.fetchone()
+    if result is None:
+      raise Exception("URL not found with url_id=%s" % (url_id,))
+    url = result[0]
+  
+    if widget_type == 'testimonials':
+      comments = {}
+      users = {}
+      comment_ids = set()
+      user_ids = set()      
+      # fetch all tips for comments in this widget, collecting the user ids and comment ids in the process
+      data_cursor.execute("SELECT comment_id,user_id,SUM(amount) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id")
+      for result in data_cursor:
+        comment_id = result[0]
+        user_id = result[1]
+        amount = result[2]        
+        comment_ids.add(comment_id)
+        user_ids.add(user_id)
+        if comment_id not in comments:
+          comments[comment_id] = { 'amount':0, 'promoters':[] }
+        comments[comment_id]['amount'] += amount
+        comments[comment_id]['promoters'].append({'id':user_id, 'amount':amount})
+      # now fetch comment data
+      data_cursor.execute("SELECT id,uuid,user_id,content FROM comments WHERE id IN %s", (comment_ids,))
+      for result in data_cursor:
+        comment_id = result[0]
+        comments[comment_id]['uuid'] = result[1]
+        comments[comment_id]['content'] = result[2]
+        comments[comment_id]['owner_id'] = result[3]
+      # now fetch user data
+      web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (user_ids))
+      for result in web_cursor:
+        user_id = result[0]
+        users[user_id] = { 'uuid':result[1], 'name':result[2] }
+      # now combine and sort
+      data = []
+      for comment_id in comments:
+        comment = comments[comment_id]
+        comment['owner'] = users[comment['owner_id']]
+        del comment['owner_id']
+        for promoter in comment['promoters']:
+          user = users[promoter['id']]
+          promoter['uuid'] = user['uuid']
+          promoter['name'] = user['name']
+          del promoter['id']
+        comment['promoters'].sort(key=lambda x: x['amount'])
+        data.append(comment)
+      data.sort(key=lambda x: x['amount'])
+      # serialize and store
+      redis_data.set("%s:%s" % (widget_uuid,url), json.dumps(data))
+    elif widget_type == 'fan_belt':
+      pass      
+  except:
+    logger.exception("Unexpected error updating widget with button_id=%s" % (widget_id,))
+  finally:
+    if web_cursor is not None:
+      web_cursor.close()
+      pg_web.commit()
+    if data_cursor is not None:
+      data_cursor.close()
+      pg_data.commit()
