@@ -405,21 +405,18 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
 
           # send first and second click emails 
           cursor = pg_data.cursor()
-          cursor.execute("SELECT * FROM clicks WHERE user_id = %s AND parent_click_id IS NULL", (user_id,))
+          cursor.execute("SELECT COUNT(*) FROM clicks WHERE user_id = %s AND parent_click_id IS NULL", (user_id,))
+          result = cursor.fetchone()
+          logger.warn(str(result[0]) + ' clicks for this user')
+          cursor.close();
           pg_data.commit()
-          result = cursor.fetchmany(3)
-          logger.warn(cursor.rowcount + ' clicks for this user')
 
-          #
-          # Francis - i need to retrieve the URL title also or the URL object from which i can access the title
-          #
-          
-          if cursor.rowcount == 1:
-            logger.warn('sending first click email for user ' + user_id)
-            send_new_user_FirstClick_email(user_id, url_title)
-          elif cursor.rowcount == 2:
-            logger.warn('sending second click email for user ' + user_id)
-            send_new_user_SecondClick_email(user_id, url_title)
+          if result[0] == 1:
+            logger.warn('sending first click email for user ' + str(user_id))
+            send_new_user_FirstClick_email(user_id, url_id)
+          elif result[0] == 2:
+            logger.warn('sending second click email for user ' + str(user_id))
+            send_new_user_SecondClick_email(user_id, url_id)
 
           # 1) query cache to see if there is a change of position in the widget
           # 2) if negative or positive position change call functions :
@@ -445,10 +442,8 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           #
           #   5.1) send_fund_reminder_email(user_id):
           
-          
           # update redis widget data cache
           update_widget(button_id, url_id)
-
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
@@ -525,12 +520,12 @@ def send_new_position_in_testimonial_email(user_id, click_id, url_title, prev_po
   data = { 'class': 'UserMailer', 'args':[ 'new_position_in_testimonial', user_id, click_id, url_title, prev_pos, cur_pos ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
     
-def send_new_user_FirstClick_email(user_id, url_title):
-  data = { 'class': 'UserMailer', 'args':[ 'new_user_FirstClick', user_id, url_title ] }
+def send_new_user_FirstClick_email(user_id, url_id):
+  data = { 'class': 'UserMailer', 'args':[ 'new_user_FirstClick', user_id, url_id ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
-def send_new_user_SecondClick_email(user_id, url_title):
-  data = { 'class': 'UserMailer', 'args':[ 'new_user_SecondClick', user_id, url_title ] }
+def send_new_user_SecondClick_email(user_id, url_id):
+  data = { 'class': 'UserMailer', 'args':[ 'new_user_SecondClick', user_id, url_id ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
   
 def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
@@ -599,15 +594,22 @@ def update_widget(widget_id, url_id):
       data = []
       for comment_id in comments:
         comment = comments[comment_id]
+        # remove owner from promoters list
+        comment['promoters'] = [promoter for promoter in comment['promoters'] if promoter['id'] != comment['owner_id']]
+        # remove owner id from metadata
         comment['owner'] = users[comment['owner_id']]
         del comment['owner_id']
+        # set uuid and name for each promoter, remove id
         for promoter in comment['promoters']:
           user = users[promoter['id']]
           promoter['uuid'] = user['uuid']
           promoter['name'] = user['name']
           del promoter['id']
+        # sort by amount, date
         comment['promoters'].sort(key=lambda x: (-x['amount'],x['created_at']))
+        # add to final list
         data.append(comment)
+      # sort final list by amount, date
       data.sort(key=lambda x: (-x['amount'],x['created_at']))
       # serialize and store
       redis_data.set("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
