@@ -400,21 +400,22 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           if title_updated_at is None:
             scraper.enqueue_url(referrer)
 
-					# send first and second click emails 
-					cursor = pg_data.cursor()
-				  cursor.execute("SELECT * FROM clicks WHERE user_id = %s AND parent_click_id IS NULL", (user_id,))
-				  result = cursor.fetchmany(3)
-				  logger.warn(result.arraysize + ' clicks for this user')
-				  if result.arraysize == 1:
-				  	logger.warn('sending first click email for user ' + user_id)
-						send_new_user_FirstClick_email(user_id):
-				    return
-				
-					if result.arraysize == 2:
-						logger.warn('sending second click email for user ' + user_id)
-						send_new_user_SecondClick_email(user_id):
-						return
-				
+          # send first and second click emails 
+          cursor = pg_data.cursor()
+          cursor.execute("SELECT * FROM clicks WHERE user_id = %s AND parent_click_id IS NULL", (user_id,))
+          pg_data.commit()
+          result = cursor.fetchmany(3)
+          logger.warn(cursor.rowcount + ' clicks for this user')
+          if cursor.rowcount == 1:
+            logger.warn('sending first click email for user ' + user_id)
+            send_new_user_FirstClick_email(user_id)
+            return
+                            
+          if cursor.rowcount == 2:
+            logger.warn('sending second click email for user ' + user_id)
+            send_new_user_SecondClick_email(user_id)
+            return
+        
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
@@ -484,18 +485,18 @@ def send_fund_reminder_email(user_id):
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
 def send_new_position_in_fanbelt_email(user_id, click_id, url_title, prev_pos, cur_pos):
-	data = { 'class': 'UserMailer', 'args':[ 'new_position_in_fanbelt', user_id, click_id, url_title, prev_pos, cur_pos ] }
-	redis_web.rpush('resque:queue:mailer', json.dumps(data))
+  data = { 'class': 'UserMailer', 'args':[ 'new_position_in_fanbelt', user_id, click_id, url_title, prev_pos, cur_pos ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
 def send_new_user_FirstClick_email(user_id, url_title):
-	data = { 'class': 'UserMailer', 'args':[ 'new_user_FirstClick', user_id, url_title ] }
-	redis_web.rpush('resque:queue:mailer', json.dumps(data))
+  data = { 'class': 'UserMailer', 'args':[ 'new_user_FirstClick', user_id, url_title ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
 def send_new_user_SecondClick_email(user_id, url_title):
-	data = { 'class': 'UserMailer', 'args':[ 'new_user_SecondClick', user_id, url_title ] }
-	redis_web.rpush('resque:queue:mailer', json.dumps(data))
-	
+  data = { 'class': 'UserMailer', 'args':[ 'new_user_SecondClick', user_id, url_title ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
+  
 def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
-	data = { 'class': 'UserMailer', 'args':[ 'testimonial_promoted', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
-	redis_web.rpush('resque:queue:mailer', json.dumps(data))
+  data = { 'class': 'UserMailer', 'args':[ 'testimonial_promoted', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
  
