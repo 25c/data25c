@@ -570,7 +570,7 @@ def update_widget(widget_id, url_id):
       comment_ids = set()
       user_ids = set()      
       # fetch all tips for comments in this widget, collecting the user ids and comment ids in the process
-      data_cursor.execute("SELECT comment_id,user_id,SUM(amount) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id")
+      data_cursor.execute("SELECT comment_id,user_id,SUM(amount) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id", (widget_id, url_id))
       for result in data_cursor:
         comment_id = result[0]
         user_id = result[1]
@@ -579,17 +579,17 @@ def update_widget(widget_id, url_id):
         user_ids.add(user_id)
         if comment_id not in comments:
           comments[comment_id] = { 'amount':0, 'promoters':[] }
-        comments[comment_id]['amount'] += amount
-        comments[comment_id]['promoters'].append({'id':user_id, 'amount':amount})
+        comments[comment_id]['amount'] += long(amount)
+        comments[comment_id]['promoters'].append({'id':user_id, 'amount':long(amount)})
       # now fetch comment data
-      data_cursor.execute("SELECT id,uuid,user_id,content FROM comments WHERE id IN %s", (comment_ids,))
+      data_cursor.execute("SELECT id,uuid,user_id,content FROM comments WHERE id IN %s", (tuple(comment_ids),))
       for result in data_cursor:
         comment_id = result[0]
         comments[comment_id]['uuid'] = result[1]
-        comments[comment_id]['content'] = result[2]
-        comments[comment_id]['owner_id'] = result[3]
+        comments[comment_id]['owner_id'] = result[2]
+        comments[comment_id]['content'] = result[3]
       # now fetch user data
-      web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (user_ids))
+      web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
       for result in web_cursor:
         user_id = result[0]
         users[user_id] = { 'uuid':result[1], 'name':result[2] }
