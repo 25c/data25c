@@ -410,12 +410,16 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           result = cursor.fetchmany(3)
           logger.warn(cursor.rowcount + ' clicks for this user')
 
+          #
+          # Francis - i need to retrieve the URL title also or the URL object from which i can access the title
+          #
+          
           if cursor.rowcount == 1:
             logger.warn('sending first click email for user ' + user_id)
-            send_new_user_FirstClick_email(user_id)
-          else if cursor.rowcount == 2:
-                  logger.warn('sending second click email for user ' + user_id)
-                  send_new_user_SecondClick_email(user_id)
+            send_new_user_FirstClick_email(user_id, url_title)
+          elif cursor.rowcount == 2:
+            logger.warn('sending second click email for user ' + user_id)
+            send_new_user_SecondClick_email(user_id, url_title)
 
           # 1) query cache to see if there is a change of position in the widget
           # 2) if negative or positive position change call functions :
@@ -434,6 +438,12 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           #
           #   4.1)  send_new_unmoderated_comment(user_id, comment_id, url_title)
           # 
+          # 5) if CC not on file, we need to create a recurringly sent email to complete profile
+          #
+          #   Do we send this email everytime user click or we set a background recurring task on Heroku?
+          #   Do we do this from this file? 
+          #
+          #   5.1) send_fund_reminder_email(user_id):
           
           
           # update redis widget data cache
@@ -526,7 +536,11 @@ def send_new_user_SecondClick_email(user_id, url_title):
 def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
   data = { 'class': 'UserMailer', 'args':[ 'testimonial_promoted', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
- 
+
+def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
+  data = { 'class': 'UserMailer', 'args':[ 'new_unmoderated_comment', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
+  redis_web.rpush('resque:queue:mailer', json.dumps(data))
+
 
 def update_widget(widget_id, url_id):
   if url_id is None:
