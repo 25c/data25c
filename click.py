@@ -500,24 +500,26 @@ def update_widget(widget_id, url_id):
       comment_ids = set()
       user_ids = set()      
       # fetch all tips for comments in this widget, collecting the user ids and comment ids in the process
-      data_cursor.execute("SELECT comment_id,user_id,SUM(amount) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id", (widget_id, url_id))
+      data_cursor.execute("SELECT comment_id,user_id,SUM(amount),MIN(created_at) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id", (widget_id, url_id))
       for result in data_cursor:
         comment_id = result[0]
         user_id = result[1]
-        amount = result[2]        
+        amount = result[2]
+        created_at = result[3]
         comment_ids.add(comment_id)
         user_ids.add(user_id)
         if comment_id not in comments:
           comments[comment_id] = { 'amount':0, 'promoters':[] }
         comments[comment_id]['amount'] += long(amount)
-        comments[comment_id]['promoters'].append({'id':user_id, 'amount':long(amount)})
+        comments[comment_id]['promoters'].append({'id':user_id, 'amount':long(amount), 'created_at':created_at})
       # now fetch comment data
-      data_cursor.execute("SELECT id,uuid,user_id,content FROM comments WHERE id IN %s", (tuple(comment_ids),))
+      data_cursor.execute("SELECT id,uuid,user_id,content,created_at FROM comments WHERE id IN %s", (tuple(comment_ids),))
       for result in data_cursor:
         comment_id = result[0]
         comments[comment_id]['uuid'] = result[1]
         comments[comment_id]['owner_id'] = result[2]
         comments[comment_id]['content'] = result[3]
+        comments[comment_id]['created_at'] = result[4]
       # now fetch user data
       web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
       for result in web_cursor:
@@ -534,11 +536,11 @@ def update_widget(widget_id, url_id):
           promoter['uuid'] = user['uuid']
           promoter['name'] = user['name']
           del promoter['id']
-        comment['promoters'].sort(key=lambda x: x['amount'])
+        comment['promoters'].sort(key=lambda x: (-x['amount'],x['created_at']))
         data.append(comment)
-      data.sort(key=lambda x: x['amount'])
+      data.sort(key=lambda x: (-x['amount'],x['created_at']))
       # serialize and store
-      redis_data.set("%s:%s" % (widget_uuid,url), json.dumps(data))
+      redis_data.set("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
     elif widget_type == 'fan_belt':
       pass      
   except:
