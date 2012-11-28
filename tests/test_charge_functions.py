@@ -27,10 +27,9 @@ class TestChargeFunctions(unittest.TestCase):
     cursor.execute('DELETE FROM comments;')
     cursor.close()
     
-    # make sure the test click user starts with 0 balance
+    # make sure the test click users start with 0 balance
     cursor = self.pg_web.cursor()
-    cursor.execute("UPDATE users SET balance=0 WHERE uuid=%s", ("3dd80d107941012f5e2c60c5470a09c8",))
-    self.redis_data.set('user:3dd80d107941012f5e2c60c5470a09c8', 0)
+    cursor.execute("UPDATE users SET balance=0")
     
     # and no payments are in the db
     cursor.execute('DELETE FROM payments;')
@@ -41,10 +40,9 @@ class TestChargeFunctions(unittest.TestCase):
     share_users = json.dumps([{'user':result[0],'share_amount':10}])
     cursor.execute("UPDATE buttons SET share_users=%s WHERE uuid=%s", (share_users, "92d1cdb0f60c012f5f3960c5470a09c8",))
     
-    # clear the redis/resque mail queue
-    self.redis_web.delete('resque:queue:mailer')
-    # clear the url scrape queue
-    self.redis_data.delete('QUEUE_SCRAPER')
+    # clear the redis dbs
+    self.redis_web.flushdb()
+    self.redis_data.flushdb()
     
   def tearDown(self):
     self.pg_data.close()
@@ -126,8 +124,8 @@ class TestChargeFunctions(unittest.TestCase):
     self.assertEqual(10, result[0])
     
     # invoice email should be queued up
-    self.assertEqual(1, self.redis_web.llen('resque:queue:mailer'))
-    data = json.loads(self.redis_web.lindex('resque:queue:mailer', 0))
+    self.assertEqual(3, self.redis_web.llen('resque:queue:mailer'))
+    data = json.loads(self.redis_web.lindex('resque:queue:mailer', 2))
     self.assertEqual(['new_invoice', 568334, payment_id], data['args'])
         
 if __name__ == '__main__':

@@ -187,7 +187,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
         fb_action_id = None
       
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, fb_action_id, updated_at, click_id))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, fb_action_id=%s, counter=%s, updated_at=%s WHERE id=%s", (state, amount, fb_action_id, counter, updated_at, click_id))
     if share_users is not None:
       # iterate over and update share amount
       try:
@@ -395,9 +395,6 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           logger.info(uuid + ':click inserted, balance=' + str(new_balance) + ' for user_uuid=' + user_uuid)
           # update redis balance cache for user
           redis_data.set('user:' + user_uuid, new_balance)
-          # send funding reminder, if necessary
-          if balance < 1000000000 and new_balance >= 1000000000:
-            send_fund_reminder_email(user_id)
           # enqueue url scrape on referrer if necessary
           # TODO also enqueue if older than a certain age
           if title_updated_at is None:

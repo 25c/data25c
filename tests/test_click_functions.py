@@ -75,7 +75,7 @@ class TestClickFunctions(unittest.TestCase):
     self.assertTupleEqual((1, 659867728, None, 1000000000), result)
     self.assertEqual(1, self.redis_web.llen('resque:queue:mailer'))
     data = json.loads(self.redis_web.lindex('resque:queue:mailer', 0))
-    self.assertEqual(568334, data['args'][1])
+    self.assertEqual(['new_user_FirstClick',568334,None], data['args'])
     
   def test_validate_click(self):    
     # invalid user_id
@@ -205,9 +205,9 @@ class TestClickFunctions(unittest.TestCase):
     self.assertEqual(0, result[0])
     self.assertEqual(0, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))    
 
-    cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
+    cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount, counter FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
-    self.assertTupleEqual((5, 659867728, None, 0), result)
+    self.assertTupleEqual((5, 659867728, None, 0, 2), result)
     
     # insert AGAIN, with positive amount, verify state change
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":1234, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "counter":3}'
@@ -218,9 +218,9 @@ class TestClickFunctions(unittest.TestCase):
     self.assertEqual(1234000000, result[0])
     self.assertEqual(1234000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))    
 
-    cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
+    cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount, counter FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
-    self.assertTupleEqual((1, 659867728, None, 1234000000), result)
+    self.assertTupleEqual((1, 659867728, None, 1234000000, 3), result)
     
     # insert a new click with a new uuid, but should still have the same url_id
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc0", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "counter":1}'
