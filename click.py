@@ -233,7 +233,9 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
           for uuid in cascade_undo_uuids:
             undo_click(uuid)
           # update redis widget data cache
-          update_widget(button_id, url_id)
+          (widget_type, before, after) = update_widget(button_id, url_id)
+          # send widget notifications
+          send_widget_notifications(widget_type, button_id, url_id, before, after)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
       except:
@@ -559,7 +561,7 @@ def send_widget_notifications(widget_type, widget_id, url_id, before, after):
 
 def update_widget(widget_id, url_id):
   if url_id is None:
-    return
+    return (None, None, None)
     
   web_cursor = None
   data_cursor = None
