@@ -513,8 +513,8 @@ def send_fund_reminder_email(user_id):
   data = { 'class': 'UserMailer', 'args':[ 'fund_reminder', user_id ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
-def send_new_position_in_fanbelt_email(user_id, click_id, url_title, prev_pos, cur_pos):
-  data = { 'class': 'UserMailer', 'args':[ 'new_position_in_fanbelt', user_id, click_id, url_title, prev_pos, cur_pos ] }
+def send_new_position_in_fanbelt_email(user_uuid, url_id, prev_pos, cur_pos):
+  data = { 'class': 'UserMailer', 'args':[ 'new_position_in_fanbelt', user_uuid, url_id, prev_pos, cur_pos ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
 def send_new_position_in_testimonial_email(comment_uuid, prev_pos, cur_pos):
@@ -533,7 +533,7 @@ def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, p
   data = { 'class': 'UserMailer', 'args':[ 'testimonial_promoted', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
-def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
+def send_new_unmoderated_comment_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
   data = { 'class': 'UserMailer', 'args':[ 'new_unmoderated_comment', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
@@ -557,8 +557,23 @@ def send_widget_notifications(widget_type, widget_id, url_id, before, after):
         send_new_position_in_testimonial_email(comment['uuid'], prev_position, new_position)
       new_position += 1      
   elif widget_type == 'fan_belt':
-    pass
-
+    new_position = 1
+    for user in after:
+      # look for user in before state for previous position
+      found = False
+      prev_position = 1
+      if before is not None:
+        for prev_user in before:
+          if prev_user['uuid'] == user['uuid']:
+            found = True
+            break
+          prev_position += 1
+      if not found:
+        prev_position = -1
+      if prev_position != new_position:
+        send_new_position_in_fanbelt_email(user['uuid'], url_id, prev_position, new_position)
+      new_position += 1
+      
 def update_widget(widget_id, url_id):
   if url_id is None:
     return (None, None, None)
@@ -587,7 +602,7 @@ def update_widget(widget_id, url_id):
       comments = {}
       users = {}
       comment_ids = set()
-      user_ids = set()      
+      user_ids = set()
       # fetch all tips for comments in this widget, collecting the user ids and comment ids in the process
       data_cursor.execute("SELECT comment_id,user_id,SUM(amount),MIN(created_at) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id", (widget_id, url_id))
       for result in data_cursor:
@@ -641,7 +656,27 @@ def update_widget(widget_id, url_id):
       if before is not None:
         before = json.loads(before) 
     elif widget_type == 'fan_belt':
-      pass      
+      # fetch top 5 users for this fan belt
+      data_cursor.execute("SELECT user_id,SUM(amount) AS total_amount,MIN(created_at) AS first_created_at FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY user_id ORDER BY total_amount DESC, first_created_at ASC LIMIT 5", (widget_id, url_id))
+      data = []
+      user_ids = []
+      for result in data_cursor:
+        user_ids.append(result[0])
+        data.append({ 'id':result[0], 'amount':long(result[1]), 'created_at':result[2] })
+      # get detailed user data
+      users = {}
+      web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
+      for result in web_cursor:
+        user_id = result[0]
+        users[user_id] = { 'uuid':result[1], 'name':result[2] }
+      # combine
+      for user in data:
+        user['uuid'] = users[user['id']]['uuid']
+        user['name'] = users[user['id']]['name']
+        del user['id']
+      before = redis_data.getset("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
+      if before is not None:
+        before = json.loads(before) 
     return (widget_type, before, data)
   except:
     logger.exception("Unexpected error updating widget with button_id=%s" % (widget_id,))
@@ -652,4 +687,3 @@ def update_widget(widget_id, url_id):
     if data_cursor is not None:
       data_cursor.close()
       pg_data.commit()
-
