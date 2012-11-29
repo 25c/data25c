@@ -440,7 +440,9 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           #   5.1) send_fund_reminder_email(user_id):
           
           # update redis widget data cache
-          update_widget(button_id, url_id)
+          (widget_type, before, after) = update_widget(button_id, url_id)
+          # send widget notifications
+          send_widget_notifications(widget_type, button_id, url_id, before, after)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
@@ -513,8 +515,8 @@ def send_new_position_in_fanbelt_email(user_id, click_id, url_title, prev_pos, c
   data = { 'class': 'UserMailer', 'args':[ 'new_position_in_fanbelt', user_id, click_id, url_title, prev_pos, cur_pos ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
-def send_new_position_in_testimonial_email(user_id, click_id, url_title, prev_pos, cur_pos):
-  data = { 'class': 'UserMailer', 'args':[ 'new_position_in_testimonial', user_id, click_id, url_title, prev_pos, cur_pos ] }
+def send_new_position_in_testimonial_email(comment_uuid, prev_pos, cur_pos):
+  data = { 'class': 'CommentMailer', 'args':[ 'new_position_in_testimonial', comment_uuid, prev_pos, cur_pos ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
     
 def send_new_user_FirstClick_email(user_id, url_id):
@@ -533,6 +535,27 @@ def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, p
   data = { 'class': 'UserMailer', 'args':[ 'new_unmoderated_comment', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
+def send_widget_notifications(widget_type, widget_id, url_id, before, after):
+  if widget_type == 'testimonials':
+    new_position = 1
+    for comment in after:
+      # look for comment in before state for previous position
+      found = False
+      prev_position = 1
+      if before is not None:
+        for prev_comment in before:
+          if prev_comment['uuid'] == comment['uuid']:
+            found = True
+            break
+          prev_position += 1
+      if not found:
+        prev_position = -1
+      # send new position email if changed
+      if prev_position != new_position:
+        send_new_position_in_testimonial_email(comment['uuid'], prev_position, new_position)
+      new_position += 1      
+  elif widget_type == 'fan_belt':
+    pass
 
 def update_widget(widget_id, url_id):
   if url_id is None:
@@ -556,6 +579,8 @@ def update_widget(widget_id, url_id):
       raise Exception("URL not found with url_id=%s" % (url_id,))
     url = result[0]
   
+    before = None
+    data = None
     if widget_type == 'testimonials':
       comments = {}
       users = {}
@@ -609,9 +634,13 @@ def update_widget(widget_id, url_id):
       # sort final list by amount, date
       data.sort(key=lambda x: (-x['amount'],x['created_at']))
       # serialize and store
-      redis_data.set("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
+      before = redis_data.getset("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
+      # return data for notification comparison
+      if before is not None:
+        before = json.loads(before) 
     elif widget_type == 'fan_belt':
       pass      
+    return (widget_type, before, data)
   except:
     logger.exception("Unexpected error updating widget with button_id=%s" % (widget_id,))
   finally:
