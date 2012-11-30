@@ -409,38 +409,17 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           logger.warn(str(result[0]) + ' clicks for this user')
           cursor.close();
           pg_data.commit()
-
           if result[0] == 1:
             logger.warn('sending first click email for user ' + str(user_id))
             send_new_user_FirstClick_email(user_id, url_id)
           elif result[0] == 2:
             logger.warn('sending second click email for user ' + str(user_id))
             send_new_user_SecondClick_email(user_id, url_id)
+            
+          # send email for comment promotion
+          if comment_id is not None and comment_text is None and user_id != comment_user_id:
+            send_testimonial_promoted_email(comment_id, user_id, amount)
 
-          # 1) query cache to see if there is a change of position in the widget
-          # 2) if negative or positive position change call functions :
-          #
-          #   Depending if it is a top fans or top notes widget: 
-          #
-          #   2.1) send_new_position_in_fanbelt_email(user_id, click_id, url_title, prev_pos, cur_pos):
-          # or 
-          #   2.2) send_new_position_in_testimonial_email(user_id, click_id, url_title, prev_pos, cur_pos):
-          #
-          # 3) send an email when someone promote another user note and call function below
-          #
-          #   3.1) send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
-          #
-          # 4) send the comment for moderation to the assigned publisher moderation email (if any)
-          #
-          #   4.1)  send_new_unmoderated_comment(user_id, comment_id, url_title)
-          # 
-          # 5) if CC not on file, we need to create a recurringly sent email to complete profile
-          #
-          #   Do we send this email everytime user click or we set a background recurring task on Heroku?
-          #   Do we do this from this file? 
-          #
-          #   5.1) send_fund_reminder_email(user_id):
-          
           # update redis widget data cache
           (widget_type, before, after) = update_widget(button_id, url_id)
           # send widget notifications
@@ -532,8 +511,8 @@ def send_new_user_SecondClick_email(user_id, url_id):
   data = { 'class': 'UserMailer', 'args':[ 'new_user_SecondClick', user_id, url_id ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
   
-def send_testimonial_promoted_email(user_id, tipper_id, comment_id, url_title, promoted_amount):
-  data = { 'class': 'UserMailer', 'args':[ 'testimonial_promoted', user_id, tipper_id, comment_id, url_title, promoted_amount ] }
+def send_testimonial_promoted_email(comment_id, tipper_user_id, amount):
+  data = { 'class': 'CommentMailer', 'args':[ 'testimonial_promoted', comment_id, tipper_user_id, amount ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
 def send_new_unmoderated_comment_email(user_id, tipper_id, comment_id, url_title, promoted_amount):

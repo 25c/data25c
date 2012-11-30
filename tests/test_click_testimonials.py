@@ -91,7 +91,9 @@ class TestClickTestimonials(unittest.TestCase):
     self.assertEqual("3946dd60-1b11-0130-60ad-60c5470a09c8", data[1]['uuid'])
     self.assertEqual("8b5a3850-1b0c-0130-60ab-60c5470a09c8", data[2]['uuid'])
     # emails- should be new position emails for displaced comments
-    self.assertEqual(11, self.redis_web.llen('resque:queue:mailer'))
+    self.assertEqual(12, self.redis_web.llen('resque:queue:mailer'))
+    data = json.loads(self.redis_web.lindex('resque:queue:mailer', -3))
+    self.assertEqual('testimonial_promoted', data['args'][0])
     data = json.loads(self.redis_web.lindex('resque:queue:mailer', -2))
     self.assertEqual(['new_position_in_testimonial','815e21d0-1b13-0130-60b0-60c5470a09c8', 2, 1], data['args'])
     data = json.loads(self.redis_web.lindex('resque:queue:mailer', -1))
@@ -109,6 +111,6 @@ class TestClickTestimonials(unittest.TestCase):
     self.assertEqual("8b5a3850-1b0c-0130-60ab-60c5470a09c8", data[2]['uuid'])
     self.assertEqual("9f0d5780-1b21-0130-60b3-60c5470a09c8", data[3]['uuid'])
     # emails- should be new position emails for new comment
-    self.assertEqual(13, self.redis_web.llen('resque:queue:mailer'))
+    self.assertEqual(14, self.redis_web.llen('resque:queue:mailer'))
     data = json.loads(self.redis_web.lindex('resque:queue:mailer', -1))
     self.assertEqual(['new_position_in_testimonial','9f0d5780-1b21-0130-60b3-60c5470a09c8', -1, 4], data['args'])    
