@@ -1,5 +1,5 @@
 from config import SETTINGS, pg_connect
-from datetime import datetime,timedelta
+from datetime import datetime
 import isodate
 import json
 import redis
@@ -61,11 +61,7 @@ class TestChargeFunctions(unittest.TestCase):
     
     # insert old (i.e. past undo grace period) clicks just below $5 threshold
     for i in range(9):
-      click_uuid = uuid.uuid4().hex
-      click.insert_click(click_uuid, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 50*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", 1)
-      # manually update db to make them past grace period
-      old_date = datetime.utcnow() - timedelta(hours=2)
-      cursor_data.execute("UPDATE clicks SET created_at=%s, updated_at=%s WHERE uuid=%s", (old_date, old_date, click_uuid))
+      click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 50*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", isodate.parse_datetime("2012-09-12T00:20:19.882Z"))
     
     # assert ending balance of $4.50
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
@@ -77,7 +73,7 @@ class TestChargeFunctions(unittest.TestCase):
     self.assertEqual([], user_ids)
     
     # insert a new click (still within grace period) to push balance past $5
-    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 100*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", 1)
+    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 100*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", datetime.utcnow())
     
     # now the user id will be returned
     user_ids = charge.get_user_ids()
@@ -90,10 +86,7 @@ class TestChargeFunctions(unittest.TestCase):
     self.assertEqual(0, result[0])
     
     # insert an old click that WILL put total chargeable balance over $5
-    click_uuid = uuid.uuid4().hex
-    click.insert_click(click_uuid, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 75*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", 1)
-    old_date = datetime.utcnow() - timedelta(hours=2)
-    cursor_data.execute("UPDATE clicks SET created_at=%s, updated_at=%s WHERE uuid=%s", (old_date, old_date, click_uuid))
+    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 75*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", isodate.parse_datetime("2012-09-12T00:20:19.882Z"))
     # total balance shold now be $6.25
     cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
