@@ -490,6 +490,9 @@ def insert_title(url, title):
     pg_data.commit()
 
 def publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname):
+  if SETTINGS['PYTHON_ENV'] == 'test':
+    return
+    
   graph = facebook.GraphAPI(SETTINGS['FACEBOOK_APP_TOKEN'])
   fb_action_id = None
   try:
@@ -574,6 +577,18 @@ def send_widget_notifications(widget_type, widget_id, url_id, before, after):
         send_new_position_in_fanbelt_email(user['uuid'], url_id, prev_position, new_position)
       new_position += 1
       
+    prev_position = 1
+    for user in before:
+      # check if user was pushed out
+      found = False
+      for new_user in after:
+        if new_user['uuid'] == user['uuid']:
+          found = True
+          break
+      if not found:
+        send_new_position_in_fanbelt_email(user['uuid'], url_id, prev_position, -1)
+      prev_position += 1
+        
 def update_widget(widget_id, url_id):
   if url_id is None:
     return (None, None, None)
@@ -599,6 +614,7 @@ def update_widget(widget_id, url_id):
     before = None
     data = None
     if widget_type == 'testimonials':
+      data = []
       comments = {}
       users = {}
       comment_ids = set()
@@ -617,39 +633,39 @@ def update_widget(widget_id, url_id):
         comments[comment_id]['amount'] += long(amount)
         comments[comment_id]['promoters'].append({'id':user_id, 'amount':long(amount), 'created_at':created_at})
       # now fetch comment data
-      data_cursor.execute("SELECT id,uuid,user_id,content,created_at FROM comments WHERE id IN %s", (tuple(comment_ids),))
-      for result in data_cursor:
-        comment_id = result[0]
-        comments[comment_id]['uuid'] = result[1]
-        comments[comment_id]['owner_id'] = result[2]
-        comments[comment_id]['content'] = result[3]
-        comments[comment_id]['created_at'] = result[4]
-      # now fetch user data
-      web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
-      for result in web_cursor:
-        user_id = result[0]
-        users[user_id] = { 'uuid':result[1], 'name':result[2] }
-      # now combine and sort
-      data = []
-      for comment_id in comments:
-        comment = comments[comment_id]
-        # remove owner from promoters list
-        comment['promoters'] = [promoter for promoter in comment['promoters'] if promoter['id'] != comment['owner_id']]
-        # remove owner id from metadata
-        comment['owner'] = users[comment['owner_id']]
-        del comment['owner_id']
-        # set uuid and name for each promoter, remove id
-        for promoter in comment['promoters']:
-          user = users[promoter['id']]
-          promoter['uuid'] = user['uuid']
-          promoter['name'] = user['name']
-          del promoter['id']
-        # sort by amount, date
-        comment['promoters'].sort(key=lambda x: (-x['amount'],x['created_at']))
-        # add to final list
-        data.append(comment)
-      # sort final list by amount, date
-      data.sort(key=lambda x: (-x['amount'],x['created_at']))
+      if len(comment_ids) > 0:
+        data_cursor.execute("SELECT id,uuid,user_id,content,created_at FROM comments WHERE id IN %s", (tuple(comment_ids),))
+        for result in data_cursor:
+          comment_id = result[0]
+          comments[comment_id]['uuid'] = result[1]
+          comments[comment_id]['owner_id'] = result[2]
+          comments[comment_id]['content'] = result[3]
+          comments[comment_id]['created_at'] = result[4]
+        # now fetch user data
+        web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
+        for result in web_cursor:
+          user_id = result[0]
+          users[user_id] = { 'uuid':result[1], 'name':result[2] }
+        # now combine and sort
+        for comment_id in comments:
+          comment = comments[comment_id]
+          # remove owner from promoters list
+          comment['promoters'] = [promoter for promoter in comment['promoters'] if promoter['id'] != comment['owner_id']]
+          # remove owner id from metadata
+          comment['owner'] = users[comment['owner_id']]
+          del comment['owner_id']
+          # set uuid and name for each promoter, remove id
+          for promoter in comment['promoters']:
+            user = users[promoter['id']]
+            promoter['uuid'] = user['uuid']
+            promoter['name'] = user['name']
+            del promoter['id']
+          # sort by amount, date
+          comment['promoters'].sort(key=lambda x: (-x['amount'],x['created_at']))
+          # add to final list
+          data.append(comment)
+        # sort final list by amount, date
+        data.sort(key=lambda x: (-x['amount'],x['created_at']))
       # serialize and store
       before = redis_data.getset("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
       # return data for notification comparison
@@ -663,17 +679,18 @@ def update_widget(widget_id, url_id):
       for result in data_cursor:
         user_ids.append(result[0])
         data.append({ 'id':result[0], 'amount':long(result[1]), 'created_at':result[2] })
-      # get detailed user data
-      users = {}
-      web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
-      for result in web_cursor:
-        user_id = result[0]
-        users[user_id] = { 'uuid':result[1], 'name':result[2] }
-      # combine
-      for user in data:
-        user['uuid'] = users[user['id']]['uuid']
-        user['name'] = users[user['id']]['name']
-        del user['id']
+      if len(user_ids) > 0:
+        # get detailed user data
+        users = {}
+        web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
+        for result in web_cursor:
+          user_id = result[0]
+          users[user_id] = { 'uuid':result[1], 'name':result[2] }
+        # combine
+        for user in data:
+          user['uuid'] = users[user['id']]['uuid']
+          user['name'] = users[user['id']]['name']
+          del user['id']
       before = redis_data.getset("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
       if before is not None:
         before = json.loads(before) 
