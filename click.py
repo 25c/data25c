@@ -415,15 +415,21 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           elif result[0] == 2:
             logger.warn('sending second click email for user ' + str(user_id))
             send_new_user_SecondClick_email(user_id, url_id)
-            
-          # send email for comment promotion
-          if comment_id is not None and comment_text is None and user_id != comment_user_id:
-            send_testimonial_promoted_email(comment_id, user_id, amount)
 
           # update redis widget data cache
           (widget_type, before, after) = update_widget(button_id, url_id)
           # send widget notifications
           send_widget_notifications(widget_type, button_id, url_id, before, after)
+            
+          # send email for comment promotion
+          if comment_id is not None and comment_text is None and user_id != comment_user_id:
+            # find position of comment
+            position = 1
+            for comment in after:
+              if comment['uuid'] == comment_uuid:
+                break
+              position += 1              
+            send_testimonial_promoted_email(comment_id, user_id, amount, position)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
           delete_facebook_action(uuid, fb_action_id)
@@ -511,8 +517,8 @@ def send_new_user_SecondClick_email(user_id, url_id):
   data = { 'class': 'UserMailer', 'args':[ 'new_user_SecondClick', user_id, url_id ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
   
-def send_testimonial_promoted_email(comment_id, tipper_user_id, amount):
-  data = { 'class': 'CommentMailer', 'args':[ 'testimonial_promoted', comment_id, tipper_user_id, amount ] }
+def send_testimonial_promoted_email(comment_id, tipper_user_id, amount, position):
+  data = { 'class': 'CommentMailer', 'args':[ 'testimonial_promoted', comment_id, tipper_user_id, amount, position ] }
   redis_web.rpush('resque:queue:mailer', json.dumps(data))
 
 def send_new_unmoderated_comment_email(user_id, tipper_id, comment_id, url_title, promoted_amount):

@@ -93,11 +93,11 @@ class TestClickTestimonials(unittest.TestCase):
     # emails- should be new position emails for displaced comments
     self.assertEqual(12, self.redis_web.llen('resque:queue:mailer'))
     data = json.loads(self.redis_web.lindex('resque:queue:mailer', -3))
-    self.assertEqual('testimonial_promoted', data['args'][0])
-    data = json.loads(self.redis_web.lindex('resque:queue:mailer', -2))
     self.assertEqual(['new_position_in_testimonial','815e21d0-1b13-0130-60b0-60c5470a09c8', 2, 1], data['args'])
-    data = json.loads(self.redis_web.lindex('resque:queue:mailer', -1))
+    data = json.loads(self.redis_web.lindex('resque:queue:mailer', -2))
     self.assertEqual(['new_position_in_testimonial','3946dd60-1b11-0130-60ad-60c5470a09c8', 1, 2], data['args'])
+    data = json.loads(self.redis_web.lindex('resque:queue:mailer', -1))
+    self.assertEqual('testimonial_promoted', data['args'][0])
     
     # insert a $5 tip with comment by user 004
     message = '{"uuid":"98b49430-1b21-0130-60b2-60c5470a09c8", "user_uuid":"d09a5df01b0b013060a860c5470a09c8", "button_uuid":"2bbded101b00013060a060c5470a09c8", "url":"http://localhost:3000/thisisfrancis", "comment_uuid":"9f0d5780-1b21-0130-60b3-60c5470a09c8", "comment_text":"Comment from user_004", "referrer":"http://localhost:3000/thisisfrancis", "amount":500, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "counter":1}'
