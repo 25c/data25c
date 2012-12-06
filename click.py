@@ -134,14 +134,17 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
   data_cursor = None
   web_cursor = None
   try:
-    # start tpc transaction on data
+    # start tpc transaction on data and web
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor() 
+    pg_web.tpc_begin(xid_web)
+    web_cursor = pg_web.cursor()    
+    
     # update comment, if applicable
     if comment_id is not None and user_id == comment_user_id and comment_text is not None:
       data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, datetime.utcnow(), comment_id))
     # get previous value
-    data_cursor.execute("SELECT id, state, amount, share_users, fb_action_id, url_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) AND created_at<=%s FOR UPDATE", (uuid, created_at))
+    data_cursor.execute("SELECT id, state, amount, amount_paid, amount_free, share_users, fb_action_id, url_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) FOR UPDATE", (uuid, ))
     result = data_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':click not found')
@@ -154,12 +157,17 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       state = 1
     else:
       state = 5
-    share_users = result[3]
-    fb_action_id = result[4]
-    url_id = result[5]
-    created_at = result[6]
+    amount_paid = result[3]
+    amount_free = result[4]
+    share_users = result[5]
+    fb_action_id = result[6]
+    url_id = result[7]
+    old_created_at = result[8].replace(tzinfo=created_at.tzinfo)
+    # check if newer than this
+    if old_created_at > created_at:
+      raise Exception(uuid + ':out of order message dropped')
     # check if within 1 hour grace period
-    if created_at < (datetime.utcnow() - timedelta(hours=1)):
+    if old_created_at < (datetime.utcnow() - timedelta(hours=1)):
       raise Exception(uuid + ':past edit/undo grace period for update')
     
     # check if this is a comment tip, and if we need to cascade an undo to subsequent comment promotion tips
@@ -184,50 +192,69 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       # delete facebook action
       if delete_facebook_action(uuid, fb_action_id):
         fb_action_id = None
+    
+    # get the user's paid/free balances
+    web_cursor.execute("SELECT uuid, balance_paid, balance_free, total_given FROM users WHERE id=%s FOR UPDATE", (user_id,))
+    result = web_cursor.fetchone()
+    if result is None:
+      raise Exception(uuid + ':invalid user_id=' + user_id)
+    user_uuid = result[0]
+    balance_paid = result[1]
+    balance_free = result[2]
+    total_given = result[3] - old_amount + amount
+      
+    # calculate new paid/free amounts
+    if old_amount < amount:
+      amount_diff = amount - old_amount
+      # check if free credit available to handle additional amount
+      amount_free_diff = min(balance_free, amount_diff)
+      amount_paid_diff = amount_diff - amount_free_diff
+      amount_paid += amount_paid_diff
+      amount_free += amount_free_diff
+      balance_free -= amount_free_diff
+      balance_paid -= amount_paid_diff
+    elif old_amount > amount:
+      amount_diff = old_amount - amount
+      # check paid credit to refund first
+      amount_paid_diff = min(amount_paid, amount_diff)
+      amount_free_diff = amount_diff - amount_paid_diff
+      amount_paid -= amount_paid_diff
+      amount_free -= amount_free_diff
+      balance_paid += amount_paid_diff
+      balance_free += amount_free_diff
       
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, fb_action_id, datetime.utcnow(), click_id))
+    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, amount_paid, amount_free, fb_action_id, datetime.utcnow(), click_id))
     if share_users is not None:
       # iterate over and update share amount
       try:
         share_users = json.loads(share_users)
         remainder = 100
         for share in share_users:
-          data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*share['share_amount']/100, datetime.utcnow(), click_id, share['user']))
+          data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*share['share_amount']/100, amount_paid*share['share_amount']/100, amount_free*share['share_amount']/100, datetime.utcnow(), click_id, share['user']))
           remainder -= share['share_amount']
-        data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*remainder/100, datetime.utcnow(), click_id, button_user_id))
+        data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*remainder/100, amount_paid*remainder/100, amount_free*remainder/100, datetime.utcnow(), click_id, button_user_id))
       except ValueError:
         logger.exception(uuid + ': could not parse revenue share definition')
         
-    logger.info(uuid + ':updated')
+    # update user balance
+    web_cursor.execute("UPDATE users SET balance_paid=%s, balance_free=%s, total_given=%s, updated_at=%s WHERE id=%s", (balance_paid, balance_free, total_given, datetime.utcnow(), user_id))
+    
+    # prepare tpc transaction
     data_cursor.close()
     data_cursor = None
-    # prepare tpc transaction
     pg_data.tpc_prepare()
+    # prepare tpc transaction on web
+    web_cursor.close()
+    web_cursor = None
+    pg_web.tpc_prepare()
     try:
-      # update user balance
-      pg_web.tpc_begin(xid_web)
-      web_cursor = pg_web.cursor()    
-      # check and update balance
-      web_cursor.execute("SELECT uuid, balance FROM users WHERE id=%s FOR UPDATE", (user_id,))
-      result = web_cursor.fetchone()
-      if result is None:
-        raise Exception(uuid + ':invalid user_id=' + user_id)
-      user_uuid = result[0]
-      balance = result[1] - old_amount + amount
-      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (balance, datetime.utcnow(), user_id))
-      web_cursor.close()
-      web_cursor = None
-      # prepare tpc transaction on web
-      pg_web.tpc_prepare()
       # finally, try to commit both
       pg_web.tpc_commit()
       try:
         pg_data.tpc_commit()
         try:
-          logger.info(uuid + ':click updated, balance=' + str(balance) + ' for user_uuid=' + user_uuid)
-          # update redis balance cache for user
-          redis_data.set('user:' + user_uuid, balance)
+          logger.info(uuid + ':click updated, balance_paid=' + str(balance_paid) + ', balance_free=' + str(balance_free) + ' for user_uuid=' + user_uuid)
           # if any other clicks to undo, process them now
           for uuid in cascade_undo_uuids:
             undo_click(uuid)
@@ -236,15 +263,13 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
           # send widget notifications
           send_widget_notifications(widget_type, button_id, url_id, before, after)
         except:
-          logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
+          logger.exception(uuid + ':unexpected exception after successful commits')
       except:
         logger.exception(uuid + ':MANUAL ROLLBACK AND DB CONSISTENCY FIX REQUIRED')
     except:
       e = sys.exc_info()[1]
       logger.exception(uuid + ':' + str(e))
-      # close cursors and rollback
-      if web_cursor is not None:
-        web_cursor.close()
+      # rollback
       pg_web.tpc_rollback()
       pg_data.tpc_rollback()    
   except:
@@ -254,6 +279,9 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     if data_cursor is not None:
       data_cursor.close()
     pg_data.tpc_rollback()
+    if web_cursor is not None:
+      web_cursor.close()
+    pg_web.tpc_rollback()
     
 def undo_click(uuid):  
   user_id = None
@@ -316,82 +344,93 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
   data_cursor = None
   web_cursor = None
   try:
-    # start tpc transaction on data
-    pg_data.tpc_begin(xid_data)
-    data_cursor = pg_data.cursor() 
-    # attempt insert 
-    if share_users is None:
-      # no share, so just insert this click with the button owner as the receiver of the full amount
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
-      result = data_cursor.fetchone()
-      click_id = result[0]
-    else:
-      # first insert the click with the full amount and no receiver- this will be the parent click
-      data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
-      result = data_cursor.fetchone()
-      click_id = result[0]
-      # create a click for each user in the share, giving them their amount
-      remainder = 100
-      for share in share_users:
-        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
-        remainder -= share['share_amount']
-      # finally, give the remainder to the button owner
-      data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
-    # insert comment, if any
-    if comment_id is None and comment_text is not None:
-      # insert
-      now = datetime.utcnow()
-      data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, click_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, click_id, comment_text, now, now))
-      result = data_cursor.fetchone()
-      comment_id = result[0]
-      # update click with comment id
-      data_cursor.execute("UPDATE clicks SET comment_id=%s WHERE id=%s", (comment_id, click_id))
-    logger.info(uuid + ':inserted')
-    # publish a facebook timeline action, if connected, and save resulting id with click
-    fb_action_id = None
-    if facebook_uid is not None:
-      fb_action_id = publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname)
-      if fb_action_id is not None:
-        try:
-          data_cursor.execute("UPDATE clicks SET fb_action_id=%s WHERE id=%s", (fb_action_id, click_id))
-        except:
-          logger.exception(uuid + ':unable to store fb_action_id, deleting')
-          delete_facebook_action(uuid, fb_action_id)
-          fb_action_id = None
-    # check if a title exists for the referrer url, if any
-    data_cursor.execute("SELECT updated_at FROM urls WHERE url=%s", (referrer,))
-    result = data_cursor.fetchone()
-    title_updated_at = None
-    if result is not None:
-      title_updated_at = result[0]
-    # prepare tpc transaction
-    data_cursor = None
-    pg_data.tpc_prepare()
+    # update user balance
+    pg_web.tpc_begin(xid_web)
+    web_cursor = pg_web.cursor()    
+    # check and update balance
+    web_cursor.execute("SELECT uuid, balance_paid, balance_free, total_given FROM users WHERE id=%s FOR UPDATE", (user_id,))
+    result = web_cursor.fetchone()
+    if result is None:
+      raise Exception(uuid + ':invalid user_id=' + user_id)
+    user_uuid = result[0]
+    balance_free = result[2]
+    balance_paid = result[1]
+    total_given = result[3]
+    # add to the total amount
+    total_given += amount
+    # calculate amount paid/free
+    amount_free = 0
+    amount_paid = amount
+    # use any free points available
+    if balance_free > 0:
+      amount_free = min(balance_free, amount)
+      amount_paid = amount - amount_free
+    # adjust corresponding balances
+    balance_free -= amount_free    
+    balance_paid -= amount_paid
+    web_cursor.execute("UPDATE users SET balance_paid=%s, balance_free=%s, total_given=%s, updated_at=%s WHERE id=%s", (balance_paid, balance_free, total_given, datetime.utcnow(), user_id))
+    web_cursor.close()
+    web_cursor = None
+    # prepare tpc transaction on web
+    pg_web.tpc_prepare()
     try:
-      # update user balance
-      pg_web.tpc_begin(xid_web)
-      web_cursor = pg_web.cursor()    
-      # check and update balance
-      web_cursor.execute("SELECT uuid, balance FROM users WHERE id=%s FOR UPDATE", (user_id,))
-      result = web_cursor.fetchone()
-      if result is None:
-        raise Exception(uuid + ':invalid user_id=' + user_id)
-      user_uuid = result[0]
-      balance = result[1]
-      new_balance = balance + amount
-      web_cursor.execute("UPDATE users SET balance=%s, updated_at=%s WHERE id=%s", (new_balance, datetime.utcnow(), user_id))
-      web_cursor.close()
-      web_cursor = None
-      # prepare tpc transaction on web
-      pg_web.tpc_prepare()
+      # start tpc transaction on data
+      pg_data.tpc_begin(xid_data)
+      data_cursor = pg_data.cursor()
+      # attempt insert
+      if share_users is None:
+        # no share, so just insert this click with the button owner as the receiver of the full amount
+        data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+        result = data_cursor.fetchone()
+        click_id = result[0]
+      else:
+        # first insert the click with the full amount and no receiver- this will be the parent click
+        data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
+        result = data_cursor.fetchone()
+        click_id = result[0]
+        # create a click for each user in the share, giving them their amount
+        remainder = 100
+        for share in share_users:
+          data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100.0, amount_paid * share['share_amount'] / 100.0, amount_free * share['share_amount'] / 100.0, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+          remainder -= share['share_amount']
+        # finally, give the remainder to the button owner
+        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100.0, amount_paid * remainder / 100.0, amount_free * remainder / 100.0, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+      # insert comment, if any
+      if comment_id is None and comment_text is not None:
+        # insert
+        now = datetime.utcnow()
+        data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, click_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, click_id, comment_text, now, now))
+        result = data_cursor.fetchone()
+        comment_id = result[0]
+        # update click with comment id
+        data_cursor.execute("UPDATE clicks SET comment_id=%s WHERE id=%s", (comment_id, click_id))
+      logger.info(uuid + ':inserted')
+      # publish a facebook timeline action, if connected, and save resulting id with click
+      fb_action_id = None
+      if facebook_uid is not None:
+        fb_action_id = publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname)
+        if fb_action_id is not None:
+          try:
+            data_cursor.execute("UPDATE clicks SET fb_action_id=%s WHERE id=%s", (fb_action_id, click_id))
+          except:
+            logger.exception(uuid + ':unable to store fb_action_id, deleting')
+            delete_facebook_action(uuid, fb_action_id)
+            fb_action_id = None
+      # check if a title exists for the referrer url, if any
+      data_cursor.execute("SELECT updated_at FROM urls WHERE url=%s", (referrer,))
+      result = data_cursor.fetchone()
+      title_updated_at = None
+      if result is not None:
+        title_updated_at = result[0]
+      # prepare tpc transaction
+      data_cursor = None
+      pg_data.tpc_prepare()
       # finally, try to commit both
-      pg_web.tpc_commit()
+      pg_data.tpc_commit()
       try:
-        pg_data.tpc_commit()
+        pg_web.tpc_commit()
         try:
-          logger.info(uuid + ':click inserted, balance=' + str(new_balance) + ' for user_uuid=' + user_uuid)
-          # update redis balance cache for user
-          redis_data.set('user:' + user_uuid, new_balance)
+          logger.info(uuid + ':click inserted, balance_paid=' + str(balance_paid) + ', balance_free=' + str(balance_free) + ' for user_uuid=' + user_uuid)
           # enqueue url scrape on referrer if necessary
           # TODO also enqueue if older than a certain age
           if title_updated_at is None:
@@ -426,34 +465,27 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
               position += 1              
             send_testimonial_promoted_email(comment_id, user_id, amount, position)
         except:
-          logger.exception(uuid + ':unexpected exception after successful commits, redis balance cache out of sync?')
+          logger.exception(uuid + ':unexpected exception after successful commits')
           delete_facebook_action(uuid, fb_action_id)
       except:
         logger.exception(uuid + ':MANUAL ROLLBACK AND DB CONSISTENCY FIX REQUIRED')
         delete_facebook_action(uuid, fb_action_id)
+    except psycopg2.IntegrityError:
+      # this should only be happening on duplicate uuid, update
+      logger.warn(uuid + ':exists, will update')
+      pg_data.tpc_rollback()
+      pg_web.tpc_rollback()
+      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
     except:
       logger.exception(uuid + ':unexpected exception, rolling back')
-      # close cursors and rollback
-      if web_cursor is not None:
-        web_cursor.close()
-      pg_web.tpc_rollback()
+      # rollback
       pg_data.tpc_rollback()
+      pg_web.tpc_rollback()
       delete_facebook_action(uuid, fb_action_id)
-  except psycopg2.IntegrityError:
-    # this should only be happening on duplicate uuid, update
-    logger.warn(uuid + ':exists, will update')
-    if data_cursor is not None:
-      data_cursor.close()
-    pg_data.tpc_rollback()
-    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
   except:
-    e = sys.exc_info()[1]
-    logger.exception(uuid + ':' + str(e))
-    # close cursors and rollback
-    if data_cursor is not None:
-      data_cursor.close()
-    pg_data.tpc_rollback()
-    delete_facebook_action(uuid, fb_action_id)
+    logger.exception(uuid + ':unexpected exception, rolling back')
+    # rollback
+    pg_web.tpc_rollback()
     
 def insert_title(url, title):
   try:
@@ -651,6 +683,8 @@ def update_widget(widget_id, url_id):
       # return data for notification comparison
       if before is not None:
         before = json.loads(before) 
+      else:
+        before = []
     elif widget_type == 'fan_belt':
       # fetch top 5 users for this fan belt
       data_cursor.execute("SELECT user_id,SUM(amount) AS total_amount,MIN(created_at) AS first_created_at FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY user_id ORDER BY total_amount DESC, first_created_at ASC LIMIT 5", (widget_id, url_id))
@@ -673,7 +707,9 @@ def update_widget(widget_id, url_id):
           del user['id']
       before = redis_data.getset("%s:%s" % (widget_uuid,url), json.dumps(data, default= lambda obj: obj.isoformat() if isinstance(obj, datetime) else None))
       if before is not None:
-        before = json.loads(before) 
+        before = json.loads(before)
+      else:
+        before = []
     return (widget_type, before, data)
   except:
     logger.exception("Unexpected error updating widget with button_id=%s" % (widget_id,))

@@ -35,7 +35,7 @@ def process_payment(uuid):
     pg_web.tpc_begin(xid_web)
     web_cursor = pg_web.cursor()
     # get payment info
-    web_cursor.execute("SELECT id, state, user_id, amount FROM payments WHERE LOWER(uuid) = LOWER(%s) FOR UPDATE", (uuid,))
+    web_cursor.execute("SELECT id, state, user_id, amount, currency, balance_paid FROM payments WHERE LOWER(uuid) = LOWER(%s) FOR UPDATE", (uuid,))
     result = web_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':invalid payment uuid')
@@ -43,21 +43,23 @@ def process_payment(uuid):
     state = result[1]
     user_id = result[2]
     amount = result[3]
+    currency = result[4]
+    balance_paid = result[5]
     if state != 0:
       raise Exception(uuid + ':payment already state=' + str(state))
     # get user balance, verify match with amount
-    web_cursor.execute("SELECT uuid, balance FROM users WHERE id=%s FOR UPDATE", (user_id,))
+    web_cursor.execute("SELECT uuid, balance_paid FROM users WHERE id=%s FOR UPDATE", (user_id,))
     result = web_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':invalid user_id=' + str(user_id))
     user_uuid = result[0]
-    balance = result[1]
-    if amount != balance:
-      raise Exception(uuid + ':payment amount=' + str(amount) + ' is not equal to user balance=' + str(balance))
+    user_balance_paid = result[1]
+    if balance_paid != -user_balance_paid:
+      raise Exception(uuid + ':balance_paid=' + str(balance_paid) + ' is not equal to user balance_paid=' + str(user_balance_paid))
     # update payment state
     web_cursor.execute("UPDATE payments SET state=2 WHERE id=%s", (payment_id,))
     # update user balance
-    web_cursor.execute("UPDATE users SET balance=0 WHERE id=%s", (user_id,))
+    web_cursor.execute("UPDATE users SET balance_paid=0 WHERE id=%s", (user_id,))
     web_cursor.close()
     web_cursor = None
     # prepare tpc transaction on web
@@ -68,15 +70,15 @@ def process_payment(uuid):
       data_cursor = pg_data.cursor()
       # get all current deducted clicks
       click_ids = []
-      total_amount = 0
-      data_cursor.execute("SELECT id, parent_click_id, amount FROM clicks WHERE state=%s AND user_id=%s FOR UPDATE", (1, user_id))
+      total_amount_paid = 0
+      data_cursor.execute("SELECT id, parent_click_id, amount_paid FROM clicks WHERE state=%s AND user_id=%s FOR UPDATE", (1, user_id))
       for result in data_cursor:
         click_ids.append(result[0])
         if result[1] is None:
-          total_amount += result[2]
+          total_amount_paid += result[2]
       # verify amount matches
-      if total_amount != amount:
-        raise Exception(uuid + ':payment/user balance amount=' + str(amount) + ' is not equal to deducted click total amount=' + str(total_amount))
+      if total_amount_paid != balance_paid:
+        raise Exception(uuid + ':payment/user balance amount=' + str(balance_paid) + ' is not equal to deducted click total amount=' + str(total_amount_paid))
       # update state of all clicks
       data_cursor.execute("UPDATE clicks SET state=2, funded_at=%s WHERE id IN %s", (datetime.utcnow(), tuple(click_ids)))
       data_cursor.close()

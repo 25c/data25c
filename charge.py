@@ -34,7 +34,7 @@ redis_web = redis.StrictRedis.from_url(SETTINGS['REDIS_WEB_URL'])
 # get ids of users with balance over limit
 def get_user_ids():
   cursor_web = pg_web.cursor()
-  cursor_web.execute("SELECT id FROM users WHERE balance>%s", (500*1000000,))
+  cursor_web.execute("SELECT id FROM users WHERE balance_paid<%s", (-500,))
   results = cursor_web.fetchall()
   cursor_web.close()
   pg_web.commit()
@@ -52,7 +52,7 @@ def charge_user(user_id):
     pg_data.tpc_begin(xid_data)
     data_cursor = pg_data.cursor()
     # get all unfunded tips past undo grace period
-    data_cursor.execute("SELECT id, parent_click_id, amount FROM clicks WHERE user_id=%s AND state=%s AND created_at<%s FOR UPDATE", (user_id, 1, datetime.utcnow() - timedelta(hours=1)))
+    data_cursor.execute("SELECT id, parent_click_id, amount_paid FROM clicks WHERE user_id=%s AND state=%s AND created_at<%s FOR UPDATE", (user_id, 1, datetime.utcnow() - timedelta(hours=1)))
     click_ids = []
     total_amount = 0
     # sum tip amounts
@@ -61,8 +61,8 @@ def charge_user(user_id):
       if result[1] is None:
         total_amount += result[2]
     # verify charge threshold (some of user balance may still be in undo grace period)
-    if total_amount < 500*1000000:
-      raise Exception("total_amount=$%s is below charge threshold" % (total_amount / 100000000.0,))
+    if total_amount < 500:
+      raise Exception("total_amount=%s is below charge threshold" % (total_amount,))
     web_cursor = None
     try:
       web_cursor = pg_web.cursor()
@@ -77,9 +77,11 @@ def charge_user(user_id):
       web_cursor.close()
       pg_web.commit()
               
+      # calculate charge amount- right now, 1 point balance = 1 penny, so no calculation necessary
+      charge_amount = total_amount
       # charge stored card
       charge = stripe.Charge.create(
-        amount=total_amount/1000000,
+        amount=charge_amount,
         currency='usd',
         customer=stripe_id,
         description="User ID=%s" % (user_id,)
@@ -91,12 +93,12 @@ def charge_user(user_id):
       
       # create payment object record in web25c
       now = datetime.utcnow()
-      web_cursor.execute("INSERT INTO payments (uuid, user_id, amount, state, payment_type, transaction_id, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid_mod.uuid4().hex, user_id, total_amount, 2, 'payin', charge['id'], now, now))
+      web_cursor.execute("INSERT INTO payments (uuid, user_id, amount, currency, balance_paid, state, payment_type, transaction_id, updated_at, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid_mod.uuid4().hex, user_id, charge_amount, 'usd', total_amount, 2, 'payin', charge['id'], now, now))
       result = web_cursor.fetchone()
       payment_id = result[0]
       
       # update user balance
-      web_cursor.execute("UPDATE users SET balance=balance-%s, updated_at=%s WHERE id=%s", (total_amount, datetime.utcnow(), user_id))
+      web_cursor.execute("UPDATE users SET balance_paid=balance_paid+%s, updated_at=%s WHERE id=%s", (total_amount, datetime.utcnow(), user_id))
 
       # prepare web transaction for commit
       pg_web.tpc_prepare()

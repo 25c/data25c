@@ -27,9 +27,9 @@ class TestChargeFunctions(unittest.TestCase):
     cursor.execute('DELETE FROM comments;')
     cursor.close()
     
-    # make sure the test click users start with 0 balance
+    # make sure the all test users start with 0 balance (no free credit in this test)
     cursor = self.pg_web.cursor()
-    cursor.execute("UPDATE users SET balance=0")
+    cursor.execute("UPDATE users SET balance_paid=0, balance_free=0, total_given=0")
     
     # and no payments are in the db
     cursor.execute('DELETE FROM payments;')
@@ -54,26 +54,21 @@ class TestChargeFunctions(unittest.TestCase):
     cursor_data = self.pg_data.cursor()
     cursor_web = self.pg_web.cursor()
     
-    # assert starting 0 balance
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
-    result = cursor_web.fetchone()
-    self.assertEqual(0, result[0])
-    
     # insert old (i.e. past undo grace period) clicks just below $5 threshold
     for i in range(9):
-      click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 50*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", isodate.parse_datetime("2012-09-12T00:20:19.882Z"))
+      click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 50, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", isodate.parse_datetime("2012-09-12T00:20:19.882Z"))
     
     # assert ending balance of $4.50
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    cursor_web.execute('SELECT balance_paid,balance_free,total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(450*1000000, result[0])
+    self.assertEqual((-450,0,450), result)
     
     # assert that this user does not get processed for charge
     user_ids = charge.get_user_ids()
     self.assertEqual([], user_ids)
     
     # insert a new click (still within grace period) to push balance past $5
-    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 100*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", datetime.utcnow())
+    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 100, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", datetime.utcnow())
     
     # now the user id will be returned
     user_ids = charge.get_user_ids()
@@ -86,11 +81,11 @@ class TestChargeFunctions(unittest.TestCase):
     self.assertEqual(0, result[0])
     
     # insert an old click that WILL put total chargeable balance over $5
-    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 75*1000000, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", isodate.parse_datetime("2012-09-12T00:20:19.882Z"))
+    click.insert_click(uuid.uuid4().hex, "3dd80d107941012f5e2c60c5470a09c8", "a4b16a40dff9012f5efd60c5470a09c8", None, None, None, None, 75, "127.0.0.1", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "http://localhost:3000/thisisfrancis", isodate.parse_datetime("2012-09-12T00:20:19.882Z"))
     # total balance shold now be $6.25
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    cursor_web.execute('SELECT balance_paid,balance_free,total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(625*1000000, result[0])
+    self.assertEqual((-625,0,625), result)
     
     # now a charge should be made
     charge.charge_user(568334)
@@ -99,17 +94,17 @@ class TestChargeFunctions(unittest.TestCase):
     self.assertEqual(1, result[0])
     
     # assert payment details
-    cursor_web.execute('SELECT id,user_id,amount,state,payment_type,transaction_id FROM payments;')
+    cursor_web.execute('SELECT id,user_id,amount,currency,balance_paid,state,payment_type,transaction_id FROM payments;')
     result = cursor_web.fetchone()
-    self.assertEqual((568334,525*1000000,2,'payin'), result[1:-1])
+    self.assertEqual((568334,525,'usd',525,2,'payin'), result[1:-1])
     # transaction id from stripe should be set
     self.assertIsNotNone(result[5])
     payment_id = result[0]
     
     # assert balance update- should now just be the new $1.00 click still in undo grace period
-    cursor_web.execute("SELECT balance FROM users WHERE id=%s", (568334,))
+    cursor_web.execute("SELECT balance_paid,balance_free,total_given FROM users WHERE id=%s", (568334,))
     result = cursor_web.fetchone()
-    self.assertEqual(100*1000000, result[0])
+    self.assertEqual((-100,0,625), result)
     
     # assert click status change
     cursor_data.execute("SELECT COUNT(*) FROM clicks WHERE user_id=%s AND state=2 AND payment_id=%s", (568334, payment_id))

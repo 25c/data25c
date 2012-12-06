@@ -21,10 +21,9 @@ class TestProcessorFunctions(unittest.TestCase):
     cursor.execute('DELETE FROM clicks;')
     cursor.close()
     
-    # make sure the test click user starts with 0 balance
+    # make sure the test click users start with 0 balance
     cursor = self.pg_web.cursor()
-    cursor.execute("UPDATE users SET balance=0 WHERE uuid=%s", ("3dd80d107941012f5e2c60c5470a09c8",))
-    self.redis_data.set('user:3dd80d107941012f5e2c60c5470a09c8', 0)
+    cursor.execute("UPDATE users SET balance_paid=0,balance_free=100,total_given=0")
     
     # clear the redis queues
     self.redis_data.delete('QUEUE')
@@ -44,19 +43,17 @@ class TestProcessorFunctions(unittest.TestCase):
     processor.process_message(message)
     
     # balance still 0 at this point
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(0, result[0])
-    self.assertEqual(0, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual((0, 100, 0), result)
       
     # valid message, balance should be deducted and state changed    
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     processor.process_message(message)
     
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(25000000, result[0])
-    self.assertEqual(25000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual((0, 75, 25), result)
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
@@ -65,10 +62,9 @@ class TestProcessorFunctions(unittest.TestCase):
     # process again, balance and state should be unchanged
     processor.process_message(message)
     
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(25000000, result[0])
-    self.assertEqual(25000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual((0, 75, 25), result)
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
@@ -78,10 +74,9 @@ class TestProcessorFunctions(unittest.TestCase):
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":1000, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     processor.process_message(message)
     
-    cursor_web.execute('SELECT balance FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual(1000000000, result[0])
-    self.assertEqual(1000000000, int(self.redis_data.get('user:3dd80d107941012f5e2c60c5470a09c8')))
+    self.assertEqual((-900,0,1000), result)
     
     cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
