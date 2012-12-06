@@ -157,8 +157,8 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       state = 1
     else:
       state = 5
-    amount_paid = result[3]
-    amount_free = result[4]
+    amount_paid = old_amount_paid = result[3]
+    amount_free = old_amount_free = result[4]
     share_users = result[5]
     fb_action_id = result[6]
     url_id = result[7]
@@ -199,8 +199,8 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     if result is None:
       raise Exception(uuid + ':invalid user_id=' + user_id)
     user_uuid = result[0]
-    balance_paid = result[1]
-    balance_free = result[2]
+    balance_paid = old_balance_paid = result[1]
+    balance_free = old_balance_free = result[2]
     total_given = result[3] - old_amount + amount
       
     # calculate new paid/free amounts
@@ -222,6 +222,10 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       amount_free -= amount_free_diff
       balance_paid += amount_paid_diff
       balance_free += amount_free_diff
+      
+    # check if balance is sufficient for amount
+    if balance_paid < 0:
+      raise Exception("%s: insufficient balance (free=%s, paid=%s) for amount=%s" % (uuid, old_balance_free + old_amount_paid, old_balance_paid + old_amount_paid, amount))
       
     # update click
     data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, amount_paid, amount_free, fb_action_id, datetime.utcnow(), click_id))
@@ -339,6 +343,20 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
   button_user_nickname = ids[8]
   share_users = ids[9]
   
+  # check if click already exists
+  found = False
+  try:
+    data_cursor = pg_data.cursor()
+    data_cursor.execute("SELECT id FROM clicks WHERE LOWER(uuid)=LOWER(%s)", (uuid,))
+    result = data_cursor.fetchone()
+    found = result is not None
+  finally:
+    pg_data.commit()
+    
+  if found:
+    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
+    return
+  
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
   xid_web = uuid + '-' + str(created_at) + '-insert-user'
   data_cursor = None
@@ -356,6 +374,9 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     balance_free = result[2]
     balance_paid = result[1]
     total_given = result[3]
+    # check if balance is sufficient for amount
+    if amount > (balance_free + balance_paid):
+      raise Exception("%s: insufficient balance (free=%s, paid=%s) for amount=%s" % (uuid, balance_free, balance_paid, amount))
     # add to the total amount
     total_given += amount
     # calculate amount paid/free

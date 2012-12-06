@@ -6,7 +6,6 @@ from flask import Flask, request
 import click
 import logging
 import os
-import payment
 
 # initialize logger
 logging.basicConfig()
@@ -25,12 +24,6 @@ app = Flask(__name__)
 def clicks_undo():
   for uuid in request.form.getlist('uuids[]'):
     click.undo_click(uuid)
-  return ''
-
-@app.route('/api/payments/process', methods=['POST'])
-def payment_process():
-  for uuid in request.form.getlist('uuids[]'):
-    payment.process_payment(uuid)
   return ''
   
 if __name__ == '__main__':

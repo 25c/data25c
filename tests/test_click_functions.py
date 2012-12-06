@@ -48,22 +48,23 @@ class TestClickFunctions(unittest.TestCase):
     self.redis_data.connection_pool.disconnect()
     self.redis_web.connection_pool.disconnect()
     
-  def test_send_fund_reminder_email(self):
+  def test_send_first_click_email(self):
     cursor_data = self.pg_data.cursor()
     cursor_web = self.pg_web.cursor()
     
     # insert a valid click
-    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":1000, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     
     # assert ending balance and click presence
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual((-900, 0, 1000), result)
+    self.assertEqual((0, 75, 25), result)
     cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
-    self.assertTupleEqual((1, 659867728, None, Decimal(1000)), result)
+    self.assertTupleEqual((1, 659867728, None, Decimal(25)), result)
+    # assert that first click email was enqueued
     self.assertEqual(1, self.redis_web.llen('resque:queue:mailer'))
     data = json.loads(self.redis_web.lindex('resque:queue:mailer', 0))
     self.assertEqual(['new_user_FirstClick',568334,None], data['args'])
@@ -191,16 +192,16 @@ class TestClickFunctions(unittest.TestCase):
     self.assertTupleEqual((5, 659867728, None, 0, 0, 0), result)
     
     # insert AGAIN, with positive amount, verify state change
-    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":1234, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":50, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual((-1134,0,1234), result)
+    self.assertEqual((0, 50, 50), result)
 
     cursor_data.execute('SELECT state, receiver_user_id, parent_click_id, amount, amount_paid, amount_free FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
     result = cursor_data.fetchone()
-    self.assertTupleEqual((1, 659867728, None, Decimal(1234), Decimal(1134), Decimal(100)), result)
+    self.assertTupleEqual((1, 659867728, None, Decimal(50), Decimal(0), Decimal(50)), result)
     
     # insert a new click with a new uuid, but should still have the same url_id
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc0", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
@@ -209,7 +210,7 @@ class TestClickFunctions(unittest.TestCase):
     # assert ending balance and click presence
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual((-1159, 0, 1259), result)
+    self.assertEqual((0, 25, 75), result)
     # should be the same url_id 
     cursor_data.execute('SELECT url_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc0",))
     result = cursor_data.fetchone()
@@ -222,7 +223,7 @@ class TestClickFunctions(unittest.TestCase):
     # assert ending balance and click presence
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual((-1184, 0, 1284), result)
+    self.assertEqual((0, 0, 100), result)
     # should be the same url_id 
     cursor_data.execute('SELECT url_id FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc1",))
     result = cursor_data.fetchone()
@@ -244,7 +245,7 @@ class TestClickFunctions(unittest.TestCase):
     # assert ending balance and click presence
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual((-1184, 0, 1284), result)
+    self.assertEqual((0, 0, 100), result)
     cursor_data.execute('SELECT uuid, user_id, button_id, url_id, content FROM comments WHERE id=%s', (comment_id,))
     result = cursor_data.fetchone()    
     self.assertTupleEqual(("04516c50-0aa2-0130-6095-60c5470a09c8", 568334, 702273458, url_id, "This is a modified test comment."), result)
@@ -262,14 +263,73 @@ class TestClickFunctions(unittest.TestCase):
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc1", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "comment_text": "This is a modified test comment.", "amount":0, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
-    # assert ending balance and click presence for original click
+    # assert ending balance and click presence for original click user
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
-    self.assertEqual((-1159,0,1259), result)
-    # and now for promotion click
+    self.assertEqual((0, 25, 75), result)
+    # original click now 0
+    cursor_data.execute('SELECT amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc1",))
+    result = cursor_data.fetchone()    
+    self.assertEqual(0, result[0])
+    # and also promotion click
     cursor_data.execute('SELECT amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc2",))
     result = cursor_data.fetchone()    
     self.assertEqual(0, result[0])
+    
+    # try updating click with amount beyond balance, should be dropped
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc1", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "comment_text": "This is a modified test comment.", "amount":50, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    # assert same ending balance and click presence for original click user
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual((0, 25, 75), result)
+    # original click still 0
+    cursor_data.execute('SELECT amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc1",))
+    result = cursor_data.fetchone()    
+    self.assertEqual(0, result[0])
+    
+    # try inserting a new click with amount beyond balance, should also be dropped
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc3", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "comment_text": "This is a modified test comment.", "amount":50, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    # assert same ending balance and click presence for original click user
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual((0, 25, 75), result)
+    # click should not have been inserted
+    cursor_data.execute('SELECT amount FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc3",))
+    result = cursor_data.fetchone()    
+    self.assertIsNone(result)
+    
+    # give the user some paid balance
+    cursor_web.execute("UPDATE users SET balance_paid=100 WHERE LOWER(uuid)=LOWER(%s)", ("3dd80d107941012f5e2c60c5470a09c8",))
+    
+    # now try inserting new click again
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc3", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "comment_text": "This is a modified test comment.", "amount":50, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    # assert new ending balance and click presence for user
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual((75, 0, 125), result)
+    # click should now have been inserted
+    cursor_data.execute('SELECT amount, amount_paid, amount_free FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc3",))
+    result = cursor_data.fetchone()    
+    self.assertEqual((Decimal(50), Decimal(25), Decimal(25)), result)
+    
+    # now try updating the click, verify paid/free amounts change accordingly
+    message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc3", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/about", "comment_uuid": "04516c50-0aa2-0130-6095-60c5470a09c8", "comment_text": "This is a modified test comment.", "amount":20, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
+    data = json.loads(message)
+    click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], isodate.parse_datetime(data['created_at']))
+    # assert new ending balance and click presence for user
+    cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
+    result = cursor_web.fetchone()
+    self.assertEqual((100, 5, 95), result)
+    # click should now have been inserted
+    cursor_data.execute('SELECT amount, amount_paid, amount_free FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc3",))
+    result = cursor_data.fetchone()    
+    self.assertEqual((Decimal(20), Decimal(0), Decimal(20)), result)
     
   def test_insert_and_update_click_with_share(self):
     cursor_data = self.pg_data.cursor()

@@ -27,9 +27,9 @@ class TestClickTestimonials(unittest.TestCase):
     cursor.execute('DELETE FROM comments;')
     cursor.close()
       
-    # make sure the all test users start with 0 balance
+    # give the users enough balance to test the interaction
     cursor = self.pg_web.cursor()
-    cursor.execute("UPDATE users SET balance_paid=0, balance_free=100, total_given=0")
+    cursor.execute("UPDATE users SET balance_paid=1000, balance_free=500, total_given=0")
   
     # clear redis
     self.redis_web.flushdb()
