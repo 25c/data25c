@@ -150,13 +150,9 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       raise Exception(uuid + ':click not found')
     click_id = result[0]
     state = result[1]
-    if state != 1 and state != 5:
+    if state != 'given':
       raise Exception(uuid + ':click already state=' + str(state))
     old_amount = result[2]
-    if amount > 0:
-      state = 1
-    else:
-      state = 5
     amount_paid = old_amount_paid = result[3]
     amount_free = old_amount_free = result[4]
     share_users = result[5]
@@ -228,16 +224,16 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       raise Exception("%s: insufficient balance (free=%s, paid=%s) for amount=%s" % (uuid, old_balance_free + old_amount_paid, old_balance_paid + old_amount_paid, amount))
       
     # update click
-    data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (state, amount, amount_paid, amount_free, fb_action_id, datetime.utcnow(), click_id))
+    data_cursor.execute("UPDATE clicks SET amount=%s, amount_paid=%s, amount_free=%s, fb_action_id=%s, updated_at=%s WHERE id=%s", (amount, amount_paid, amount_free, fb_action_id, datetime.utcnow(), click_id))
     if share_users is not None:
       # iterate over and update share amount
       try:
         share_users = json.loads(share_users)
         remainder = 100
         for share in share_users:
-          data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*share['share_amount']/100, amount_paid*share['share_amount']/100, amount_free*share['share_amount']/100, datetime.utcnow(), click_id, share['user']))
+          data_cursor.execute("UPDATE clicks SET amount=%s, amount_paid=%s, amount_free=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (amount*share['share_amount']/100, amount_paid*share['share_amount']/100, amount_free*share['share_amount']/100, datetime.utcnow(), click_id, share['user']))
           remainder -= share['share_amount']
-        data_cursor.execute("UPDATE clicks SET state=%s, amount=%s, amount_paid=%s, amount_free=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (state, amount*remainder/100, amount_paid*remainder/100, amount_free*remainder/100, datetime.utcnow(), click_id, button_user_id))
+        data_cursor.execute("UPDATE clicks SET amount=%s, amount_paid=%s, amount_free=%s, updated_at=%s WHERE parent_click_id=%s AND receiver_user_id=%s", (amount*remainder/100, amount_paid*remainder/100, amount_free*remainder/100, datetime.utcnow(), click_id, button_user_id))
       except ValueError:
         logger.exception(uuid + ': could not parse revenue share definition')
         
@@ -401,21 +397,21 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
       # attempt insert
       if share_users is None:
         # no share, so just insert this click with the button owner as the receiver of the full amount
-        data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+        data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, button_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, created_at, datetime.utcnow()))
         result = data_cursor.fetchone()
         click_id = result[0]
       else:
         # first insert the click with the full amount and no receiver- this will be the parent click
-        data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, 1, json.dumps(share_users), created_at, datetime.utcnow()))
+        data_cursor.execute("INSERT INTO clicks (uuid, user_id, button_id, url_id, comment_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, share_users, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (uuid, user_id, button_id, url_id, comment_id, None, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, json.dumps(share_users), created_at, datetime.utcnow()))
         result = data_cursor.fetchone()
         click_id = result[0]
         # create a click for each user in the share, giving them their amount
         remainder = 100
         for share in share_users:
-          data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100.0, amount_paid * share['share_amount'] / 100.0, amount_free * share['share_amount'] / 100.0, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+          data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, share['user'], amount * share['share_amount'] / 100.0, amount_paid * share['share_amount'] / 100.0, amount_free * share['share_amount'] / 100.0, referrer_user_id, ip_address, user_agent, referrer, created_at, datetime.utcnow()))
           remainder -= share['share_amount']
         # finally, give the remainder to the button owner
-        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, state, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100.0, amount_paid * remainder / 100.0, amount_free * remainder / 100.0, referrer_user_id, ip_address, user_agent, referrer, 1, created_at, datetime.utcnow()))
+        data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100.0, amount_paid * remainder / 100.0, amount_free * remainder / 100.0, referrer_user_id, ip_address, user_agent, referrer, created_at, datetime.utcnow()))
       # insert comment, if any
       if comment_id is None and comment_text is not None:
         # insert
@@ -653,7 +649,7 @@ def update_widget(widget_id, url_id):
       comment_ids = set()
       user_ids = set()
       # fetch all tips for comments in this widget, collecting the user ids and comment ids in the process
-      data_cursor.execute("SELECT comment_id,user_id,SUM(amount),MIN(created_at) FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY comment_id,user_id", (widget_id, url_id))
+      data_cursor.execute("SELECT comment_id,user_id,SUM(amount),MIN(created_at) FROM clicks WHERE button_id=%s AND url_id=%s AND amount>0 GROUP BY comment_id,user_id", (widget_id, url_id))
       for result in data_cursor:
         comment_id = result[0]
         user_id = result[1]
@@ -708,7 +704,7 @@ def update_widget(widget_id, url_id):
         before = []
     elif widget_type == 'fan_belt':
       # fetch top 5 users for this fan belt
-      data_cursor.execute("SELECT user_id,SUM(amount) AS total_amount,MIN(created_at) AS first_created_at FROM clicks WHERE button_id=%s AND url_id=%s AND state<5 GROUP BY user_id ORDER BY total_amount DESC, first_created_at ASC LIMIT 5", (widget_id, url_id))
+      data_cursor.execute("SELECT user_id,SUM(amount) AS total_amount,MIN(created_at) AS first_created_at FROM clicks WHERE button_id=%s AND url_id=%s AND amount>0 GROUP BY user_id ORDER BY total_amount DESC, first_created_at ASC LIMIT 5", (widget_id, url_id))
       data = []
       user_ids = []
       for result in data_cursor:

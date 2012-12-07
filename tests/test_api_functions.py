@@ -58,10 +58,6 @@ class TestApiFunctions(unittest.TestCase):
     result = cursor_web.fetchone()
     self.assertEqual((0, 75, 25), result)
     
-    cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
-    result = cursor_data.fetchone()
-    self.assertEqual(1, result[0])
-    
     # undo the click
     self.app.post('/api/clicks/undo', data='uuids[]=a2afb8a0-fc6f-11e1-b984-eff95004abc9', content_type='application/x-www-form-urlencoded')
     
@@ -69,10 +65,6 @@ class TestApiFunctions(unittest.TestCase):
     cursor_web.execute('SELECT balance_paid, balance_free, total_given FROM users WHERE uuid=%s', ("3dd80d107941012f5e2c60c5470a09c8",))
     result = cursor_web.fetchone()
     self.assertEqual((0, 100, 0), result)
-    
-    cursor_data.execute('SELECT state FROM clicks WHERE uuid=%s', ("a2afb8a0-fc6f-11e1-b984-eff95004abc9",))
-    result = cursor_data.fetchone()
-    self.assertEqual(5, result[0])
     
 if __name__ == '__main__':
   unittest.main()

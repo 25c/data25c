@@ -1,0 +1,14 @@
+step(
+  """
+ALTER TABLE clicks ALTER state TYPE VARCHAR(255) USING 'given';
+ALTER TABLE clicks ALTER state SET DEFAULT 'given';
+ALTER TABLE clicks ALTER state SET NOT NULL;
+""",
+  """
+ALTER TABLE clicks ALTER state DROP DEFAULT;
+ALTER TABLE clicks ALTER state DROP NOT NULL;
+ALTER TABLE clicks ALTER state TYPE INTEGER USING 0;
+ALTER TABLE clicks ALTER state SET DEFAULT 0;
+ALTER TABLE clicks ALTER state SET NOT NULL;
+"""
+)
