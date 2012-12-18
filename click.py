@@ -63,20 +63,23 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
       
     # validate url
     url_id = None
+    url_uuid = None
     if url is not None:
       cursor_data = None
       try:
         pg_data.autocommit = True
         cursor_data = pg_data.cursor()
-        cursor_data.execute("SELECT id FROM urls WHERE url=%s", (url,))
+        cursor_data.execute("SELECT id, uuid FROM urls WHERE url=%s", (url,))
         result = cursor_data.fetchone()
         if result is None:
           # insert and enqueue for scrape
+          url_uuid = uuid_mod.uuid4().hex
           now = datetime.utcnow()
-          cursor_data.execute("INSERT INTO urls (uuid, url, created_at, updated_at) VALUES (%s, %s, %s, %s) RETURNING id", (uuid_mod.uuid4().hex, url, now, now))
+          cursor_data.execute("INSERT INTO urls (uuid, url, created_at, updated_at) VALUES (%s, %s, %s, %s) RETURNING id, uuid", (url_uuid, url, now, now))
           result = cursor_data.fetchone()
           scraper.enqueue_url(url)
         url_id = result[0]
+        url_uuid = result[1]
       finally:
         pg_data.autocommit = False
         if cursor_data is not None:
@@ -122,7 +125,7 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
         pass
         
     # return user/button/referrer ids
-    return (user_id, facebook_uid, button_id, url_id, comment_id, comment_user_id, referrer_user_id, button_user_id, button_user_nickname, share)
+    return (user_id, facebook_uid, button_id, url_id, url_uuid, comment_id, comment_user_id, referrer_user_id, button_user_id, button_user_nickname, share)
   finally:
     if cursor is not None:
       cursor.close()
@@ -144,7 +147,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     if comment_id is not None and user_id == comment_user_id and comment_text is not None:
       data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, datetime.utcnow(), comment_id))
     # get previous value
-    data_cursor.execute("SELECT id, state, amount, amount_paid, amount_free, share_users, fb_action_id, url_id, created_at FROM clicks WHERE LOWER(uuid) = LOWER(%s) FOR UPDATE", (uuid, ))
+    data_cursor.execute("SELECT id, state, amount, amount_paid, amount_free, share_users, fb_action_id, url_id, created_at FROM clicks WHERE LOWER(uuid)=LOWER(%s) FOR UPDATE", (uuid, ))
     result = data_cursor.fetchone()
     if result is None:
       raise Exception(uuid + ':click not found')
@@ -168,26 +171,33 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     
     # check if this is a comment tip, and if we need to cascade an undo to subsequent comment promotion tips
     cascade_undo_uuids = []
-    if amount == 0 and old_amount > 0 and comment_id is not None:
+    fb_action = 'promote'
+    if comment_id is not None:
       # check if this is the original commenter
       data_cursor.execute("SELECT click_id FROM comments WHERE id=%s", (comment_id,))
       result = data_cursor.fetchone()
       if result is None:
         raise Exception(uuid + ':click comment not found')
       if result[0] == click_id:
-        # fetch all the click uuids to undo
-        data_cursor.execute("SELECT uuid FROM clicks WHERE comment_id=%s AND id<>%s", (comment_id, click_id))
-        for result in data_cursor:
-          cascade_undo_uuids.append(result[0])
+        fb_action = 'give_to'
+        if amount == 0 and old_amount > 0:
+          # fetch all the click uuids to undo
+          data_cursor.execute("SELECT uuid FROM clicks WHERE comment_id=%s AND id<>%s", (comment_id, click_id))
+          for result in data_cursor:
+            cascade_undo_uuids.append(result[0])
     
     # check if we need to delete/re-publish facebook action
-    if amount > 0 and old_amount == 0 and facebook_uid is not None:
-      # republish facebook action
-      fb_action_id = publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname)
-    elif amount == 0 and old_amount > 0 and fb_action_id is not None:
-      # delete facebook action
+    if fb_action_id is not None:
       if delete_facebook_action(uuid, fb_action_id):
         fb_action_id = None
+    if amount > 0 and facebook_uid is not None and fb_action_id is None:
+      data_cursor.execute("SELECT urls.uuid, comments.uuid FROM clicks LEFT JOIN urls ON clicks.url_id=urls.id LEFT_JOIN comments ON clicks.comment_id=comments.id WHERE clicks.id=%s", (click_id,))
+      result = data_cursor.fetchone()
+      if result is None:
+        raise Exception(uuid + ':click url and comment not found')
+      url_uuid = result[0]
+      comment_uuid = result[1]
+      fb_action_id = publish_facebook_action(facebook_uid, fb_action, amount, url_uuid, comment_uuid)
     
     # get the user's paid/free balances
     web_cursor.execute("SELECT uuid, balance_paid, balance_free, total_given FROM users WHERE id=%s FOR UPDATE", (user_id,))
@@ -332,12 +342,13 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
   facebook_uid = ids[1]
   button_id = ids[2]
   url_id = ids[3]
-  comment_id = ids[4]
-  comment_user_id = ids[5]
-  referrer_user_id = ids[6]
-  button_user_id = ids[7]
-  button_user_nickname = ids[8]
-  share_users = ids[9]
+  url_uuid = ids[4]
+  comment_id = ids[5]
+  comment_user_id = ids[6]
+  referrer_user_id = ids[7]
+  button_user_id = ids[8]
+  button_user_nickname = ids[9]
+  share_users = ids[10]
   
   # check if click already exists
   found = False
@@ -413,7 +424,9 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
         # finally, give the remainder to the button owner
         data_cursor.execute("INSERT INTO clicks (uuid, parent_click_id, user_id, button_id, url_id, receiver_user_id, amount, amount_paid, amount_free, referrer_user_id, ip_address, user_agent, referrer, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (str(uuid_mod.uuid4()), click_id, user_id, button_id, url_id, button_user_id, amount * remainder / 100.0, amount_paid * remainder / 100.0, amount_free * remainder / 100.0, referrer_user_id, ip_address, user_agent, referrer, created_at, datetime.utcnow()))
       # insert comment, if any
+      fb_action = 'promote'
       if comment_id is None and comment_text is not None:
+        fb_action = 'give_to'
         # insert
         now = datetime.utcnow()
         data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, click_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, click_id, comment_text, now, now))
@@ -422,17 +435,6 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
         # update click with comment id
         data_cursor.execute("UPDATE clicks SET comment_id=%s WHERE id=%s", (comment_id, click_id))
       logger.info(uuid + ':inserted')
-      # publish a facebook timeline action, if connected, and save resulting id with click
-      fb_action_id = None
-      if facebook_uid is not None:
-        fb_action_id = publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname)
-        if fb_action_id is not None:
-          try:
-            data_cursor.execute("UPDATE clicks SET fb_action_id=%s WHERE id=%s", (fb_action_id, click_id))
-          except:
-            logger.exception(uuid + ':unable to store fb_action_id, deleting')
-            delete_facebook_action(uuid, fb_action_id)
-            fb_action_id = None
       # check if a title exists for the referrer url, if any
       data_cursor.execute("SELECT updated_at FROM urls WHERE url=%s", (referrer,))
       result = data_cursor.fetchone()
@@ -452,6 +454,20 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
           # TODO also enqueue if older than a certain age
           if title_updated_at is None:
             scraper.enqueue_url(referrer)
+            
+          # publish a facebook timeline action, if connected, and save resulting id with click
+          if facebook_uid is not None:
+            fb_action_id = publish_facebook_action(facebook_uid, fb_action, amount, url_uuid, comment_uuid)
+            if fb_action_id is not None:
+              try:
+                data_cursor = pg_data.cursor()
+                data_cursor.execute("UPDATE clicks SET fb_action_id=%s WHERE id=%s", (fb_action_id, click_id))
+              except:
+                logger.exception(uuid + ':unable to store fb_action_id, deleting')
+                delete_facebook_action(uuid, fb_action_id)
+              finally:
+                data_cursor = None
+                pg_data.commit()
 
           # send first and second click emails 
           cursor = pg_data.cursor()
@@ -483,10 +499,8 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
             send_testimonial_promoted_email(comment_id, user_id, amount, position)
         except:
           logger.exception(uuid + ':unexpected exception after successful commits')
-          delete_facebook_action(uuid, fb_action_id)
       except:
         logger.exception(uuid + ':MANUAL ROLLBACK AND DB CONSISTENCY FIX REQUIRED')
-        delete_facebook_action(uuid, fb_action_id)
     except psycopg2.IntegrityError:
       # this should only be happening on duplicate uuid, update
       logger.warn(uuid + ':exists, will update')
@@ -498,7 +512,6 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
       # rollback
       pg_data.tpc_rollback()
       pg_web.tpc_rollback()
-      delete_facebook_action(uuid, fb_action_id)
   except:
     logger.exception(uuid + ':unexpected exception, rolling back')
     # rollback
@@ -517,18 +530,18 @@ def insert_title(url, title):
   finally:    
     data_cursor.close()
     pg_data.commit()
-
-def publish_facebook_action_pledge(uuid, facebook_uid, button_user_nickname):
+    
+def publish_facebook_action(facebook_uid, fb_action, amount, url_uuid, comment_uuid):
+  logger.info("%s %s %s %s %s" % (facebook_uid, fb_action, amount, url_uuid, comment_uuid))
   if SETTINGS['PYTHON_ENV'] == 'test':
     return
-    
   graph = facebook.GraphAPI(SETTINGS['FACEBOOK_APP_TOKEN'])
   fb_action_id = None
   try:
-    result = graph.put_object(facebook_uid, SETTINGS['FACEBOOK_NAMESPACE'] + ':pledge_to', publisher=SETTINGS['URL_BASE_TIP'] + '/' + button_user_nickname)
+    result = graph.put_object(facebook_uid, SETTINGS['FACEBOOK_NAMESPACE'] + ':' + fb_action, webpage=SETTINGS['URL_BASE_WEB'] + '/webpages/' + url_uuid, points=amount, note=SETTINGS['URL_BASE_WEB'] + '/notes/' + comment_uuid)
     fb_action_id = result['id']
   except:
-    logger.exception(uuid + ':unable to publish facebook action')
+    logger.exception('unable to publish facebook action')
   return fb_action_id
 
 def delete_facebook_action(uuid, fb_action_id):

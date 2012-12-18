@@ -92,27 +92,27 @@ class TestClickFunctions(unittest.TestCase):
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     result = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data['referrer_user_uuid'])
-    self.assertTupleEqual((568334, None, 702273458, None, None, None, None, 659867728, 'mrjingles', None), result)
+    self.assertTupleEqual((568334, None, 702273458, None, None, None, None, None, 659867728, 'mrjingles', None), result)
     
     # valid click, invalid referrer- should still return user_id and button_id
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "referrer_user_uuid":"invaliduuid", "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     result = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data['referrer_user_uuid'])
-    self.assertTupleEqual((568334, None, 702273458, None, None, None, None, 659867728, 'mrjingles', None), result)
+    self.assertTupleEqual((568334, None, 702273458, None, None, None, None, None, 659867728, 'mrjingles', None), result)
     
     # valid click, valid referrer- should return all ids
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "referrer_user_uuid":"4b7172007941012f5e2f60c5470a09c8", "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     result = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data['referrer_user_uuid'])
-    self.assertTupleEqual((568334, None, 702273458, None, None, None, 755095536, 659867728, 'mrjingles', None), result)
+    self.assertTupleEqual((568334, None, 702273458, None, None, None, None, 755095536, 659867728, 'mrjingles', None), result)
     
     # valid click on button with share, no referrer, should also return share hash
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"92d1cdb0f60c012f5f3960c5470a09c8", "amount":25, "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
     data = json.loads(message)
     result = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data['referrer_user_uuid'])
-    self.assertTupleEqual((568334, None, 749341768, None, None, None, None, 1005146552, 'thisisfrancis'), result[:-1])
-    self.assertEqual(659867728, result[9][0]['user']) 
-    self.assertEqual(10, result[9][0]['share_amount']) 
+    self.assertTupleEqual((568334, None, 749341768, None, None, None, None, None, 1005146552, 'thisisfrancis'), result[:-1])
+    self.assertEqual(659867728, result[10][0]['user']) 
+    self.assertEqual(10, result[10][0]['share_amount']) 
     
     # valid click, no referrer, with url- should return user_id and button_id for uuids, a new url_id for url
     message = '{"uuid":"a2afb8a0-fc6f-11e1-b984-eff95004abc9", "user_uuid":"3dd80d107941012f5e2c60c5470a09c8", "button_uuid":"a4b16a40dff9012f5efd60c5470a09c8", "url":"http://localhost:3000/thisisfrancis", "referrer_user_uuid":null, "referrer":"http://localhost:3000/thisisfrancis", "user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_4) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.89 Safari/537.1", "ip_address":"127.0.0.1", "created_at":"'+datetime.utcnow().isoformat()+'"}'
@@ -120,7 +120,8 @@ class TestClickFunctions(unittest.TestCase):
     result = click.validate_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data['referrer_user_uuid'])
     self.assertTupleEqual((568334, None, 702273458), result[0:3])
     self.assertIsNotNone(result[3])
-    self.assertTupleEqual((None, None, None, 659867728, 'mrjingles', None), result[4:])
+    self.assertIsNotNone(result[4])
+    self.assertTupleEqual((None, None, None, 659867728, 'mrjingles', None), result[5:])
     
     
   def test_insert_click(self):
