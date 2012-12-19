@@ -131,7 +131,7 @@ def validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_use
       cursor.close()
     pg_web.autocommit = False
   
-def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at):
+def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, comment_pseudonym, amount, created_at):
   xid_data = uuid + '-' + str(created_at) + '-update-click'
   xid_web = uuid + '-' + str(created_at) + '-update-user'
   data_cursor = None
@@ -145,7 +145,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     
     # update comment, if applicable
     if comment_id is not None and user_id == comment_user_id and comment_text is not None:
-      data_cursor.execute("UPDATE comments SET content=%s, updated_at=%s WHERE id=%s", (comment_text, datetime.utcnow(), comment_id))
+      data_cursor.execute("UPDATE comments SET content=%s, pseudonym=%s, updated_at=%s WHERE id=%s", (comment_text, comment_pseudonym, datetime.utcnow(), comment_id))
     # get previous value
     data_cursor.execute("SELECT id, state, amount, amount_paid, amount_free, share_users, fb_action_id, url_id, created_at FROM clicks WHERE LOWER(uuid)=LOWER(%s) FOR UPDATE", (uuid, ))
     result = data_cursor.fetchone()
@@ -333,9 +333,9 @@ def undo_click(uuid):
       cursor.close()
       pg_web.autocommit = False
     if button_user_id is not None and button_user_nickname is not None:
-      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, None, None, None, 0, datetime.utcnow())
+      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, None, None, None, None, 0, datetime.utcnow())
   
-def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
+def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, comment_pseudonym, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
   ids = validate_click(uuid, user_uuid, button_uuid, url, comment_uuid, referrer_user_uuid)
   if ids is None:
     return
@@ -362,7 +362,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
     pg_data.commit()
     
   if found:
-    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
+    update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, comment_pseudonym, amount, created_at)
     return
   
   xid_data = uuid + '-' + str(created_at) + '-insert-click'
@@ -430,7 +430,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
         fb_action = 'give_to'
         # insert
         now = datetime.utcnow()
-        data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, click_id, content, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, click_id, comment_text, now, now))
+        data_cursor.execute("INSERT INTO comments (uuid, user_id, button_id, url_id, click_id, content, pseudonym, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", (comment_uuid, user_id, button_id, url_id, click_id, comment_text, comment_pseudonym, now, now))
         result = data_cursor.fetchone()
         comment_id = result[0]
         # update click with comment id
@@ -507,7 +507,7 @@ def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, 
       logger.warn(uuid + ':exists, will update')
       pg_data.tpc_rollback()
       pg_web.tpc_rollback()
-      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, amount, created_at)
+      update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, comment_id, comment_user_id, comment_text, comment_pseudonym, amount, created_at)
     except:
       logger.exception(uuid + ':unexpected exception, rolling back')
       # rollback
@@ -677,13 +677,14 @@ def update_widget(widget_id, url_id):
         comments[comment_id]['promoters'].append({'id':user_id, 'amount':long(amount), 'created_at':created_at})
       # now fetch comment data
       if len(comment_ids) > 0:
-        data_cursor.execute("SELECT id,uuid,user_id,content,created_at FROM comments WHERE id IN %s", (tuple(comment_ids),))
+        data_cursor.execute("SELECT id,uuid,user_id,content,pseudonym,created_at FROM comments WHERE id IN %s", (tuple(comment_ids),))
         for result in data_cursor:
           comment_id = result[0]
           comments[comment_id]['uuid'] = result[1]
           comments[comment_id]['owner_id'] = result[2]
           comments[comment_id]['content'] = result[3]
-          comments[comment_id]['created_at'] = result[4]
+          comments[comment_id]['pseudonym'] = result[4]
+          comments[comment_id]['created_at'] = result[5]
         # now fetch user data
         web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
         for result in web_cursor:
@@ -697,6 +698,12 @@ def update_widget(widget_id, url_id):
           # remove owner id from metadata
           comment['owner'] = users[comment['owner_id']]
           del comment['owner_id']
+          # replace owner uuid and name with pseudonym, if set
+          pseudonym = comment['pseudonym']
+          del comment['pseudonym']
+          if pseudonym is not None and not pseudonym.isspace():
+            comment['owner']['name'] = pseudonym
+            comment['owner']['uuid'] = None
           # set uuid and name for each promoter, remove id
           for promoter in comment['promoters']:
             user = users[promoter['id']]

@@ -37,7 +37,7 @@ def process_message(message):
   created_at = isodate.parse_datetime(data['created_at'])
   if created_at.tzinfo is not None:
     created_at = created_at.astimezone(isodate.tzinfo.UTC).replace(tzinfo=None)
-  click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], created_at)
+  click.insert_click(data['uuid'], data['user_uuid'], data['button_uuid'], data.get('url', None), data.get('comment_uuid', None), data.get('comment_text', None), data.get('comment_pseudonym', None), data['referrer_user_uuid'], data['amount'], data['ip_address'], data['user_agent'], data['referrer'], created_at)
     
 def process_queue():
   # block and wait for click data, pushing into processing queue
