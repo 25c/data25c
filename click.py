@@ -663,7 +663,7 @@ def update_widget(widget_id, url_id):
       comment_ids = set()
       user_ids = set()
       # fetch all tips for comments in this widget, collecting the user ids and comment ids in the process
-      data_cursor.execute("SELECT comment_id,user_id,SUM(amount),MIN(created_at) FROM clicks WHERE button_id=%s AND url_id=%s AND amount>0 GROUP BY comment_id,user_id", (widget_id, url_id))
+      data_cursor.execute("SELECT clicks.comment_id,clicks.user_id,SUM(clicks.amount),MIN(clicks.created_at) FROM clicks JOIN comments ON clicks.comment_id=comments.id WHERE clicks.button_id=%s AND clicks.url_id=%s AND clicks.amount>0 AND comments.blocked=FALSE GROUP BY clicks.comment_id,clicks.user_id", (widget_id, url_id))
       for result in data_cursor:
         comment_id = result[0]
         user_id = result[1]
@@ -758,3 +758,24 @@ def update_widget(widget_id, url_id):
     if data_cursor is not None:
       data_cursor.close()
       pg_data.commit()
+
+def block_comment(uuid):
+  button_id = None
+  url_id = None
+  try:
+    data_cursor = pg_data.cursor()
+    data_cursor.execute("UPDATE comments SET blocked=TRUE WHERE LOWER(uuid)=LOWER(%s) RETURNING button_id, url_id", (uuid,))
+    result = data_cursor.fetchone()
+    if result is None:
+      raise Exception
+    button_id = result[0]
+    url_id = result[1]
+  except:
+    logger.exception("Unexpected error blocking commment with uuid=%s", uuid)
+  finally:
+    pg_data.commit()
+  # update data cache
+  if button_id is not None and url_id is not None:
+    update_widget(button_id, url_id)
+    
+  

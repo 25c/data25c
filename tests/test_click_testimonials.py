@@ -133,3 +133,14 @@ class TestClickTestimonials(unittest.TestCase):
     self.assertEqual("3946dd60-1b11-0130-60ad-60c5470a09c8", data[2]['uuid'])
     self.assertEqual("8b5a3850-1b0c-0130-60ab-60c5470a09c8", data[3]['uuid'])
     self.assertEqual("9f0d5780-1b21-0130-60b3-60c5470a09c8", data[4]['uuid'])
+    
+    # now block that last comment and assert removal and ordering
+    click.block_comment("2df62260-2bab-0130-60f7-60c5470a09c8")
+    cache = self.redis_data.get('2bbded101b00013060a060c5470a09c8:http://localhost:3000/thisisfrancis')
+    data = json.loads(cache)
+    self.assertEqual(4, len(data))
+    self.assertEqual("815e21d0-1b13-0130-60b0-60c5470a09c8", data[0]['uuid'])
+    self.assertEqual("3946dd60-1b11-0130-60ad-60c5470a09c8", data[1]['uuid'])
+    self.assertEqual("8b5a3850-1b0c-0130-60ab-60c5470a09c8", data[2]['uuid'])
+    self.assertEqual("9f0d5780-1b21-0130-60b3-60c5470a09c8", data[3]['uuid'])
+    

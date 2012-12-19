@@ -26,6 +26,12 @@ def clicks_undo():
     click.undo_click(uuid)
   return ''
   
+@app.route('/api/comments/block', methods=['POST'])
+def comments_block():
+  for uuid in request.form.getlist('uuids[]'):
+    click.block_comment(uuid)
+  return ''
+  
 if __name__ == '__main__':
   port = int(os.environ.get('PORT', 5400))
   app.run(host='0.0.0.0', port=port)
