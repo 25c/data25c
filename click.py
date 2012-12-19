@@ -161,11 +161,12 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     share_users = result[5]
     fb_action_id = result[6]
     url_id = result[7]
-    old_created_at = result[8].replace(tzinfo=created_at.tzinfo)
+    old_created_at = result[8]
     # check if newer than this
     if old_created_at > created_at:
       raise Exception(uuid + ':out of order message dropped')
     # check if within 1 hour grace period
+    logger.info("%s %s", old_created_at, old_created_at.tzinfo)
     if old_created_at < (datetime.utcnow() - timedelta(hours=1)):
       raise Exception(uuid + ':past edit/undo grace period for update')
     
@@ -191,7 +192,7 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
       if delete_facebook_action(uuid, fb_action_id):
         fb_action_id = None
     if amount > 0 and facebook_uid is not None and fb_action_id is None:
-      data_cursor.execute("SELECT urls.uuid, comments.uuid FROM clicks LEFT JOIN urls ON clicks.url_id=urls.id LEFT_JOIN comments ON clicks.comment_id=comments.id WHERE clicks.id=%s", (click_id,))
+      data_cursor.execute("SELECT urls.uuid, comments.uuid FROM clicks LEFT JOIN urls ON clicks.url_id=urls.id LEFT JOIN comments ON clicks.comment_id=comments.id WHERE clicks.id=%s", (click_id,))
       result = data_cursor.fetchone()
       if result is None:
         raise Exception(uuid + ':click url and comment not found')
