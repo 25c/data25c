@@ -29,6 +29,7 @@ def clicks_undo():
 @app.route('/api/comments/block', methods=['POST'])
 def comments_block():
   for uuid in request.form.getlist('uuids[]'):
+    logger.debug('blocking comment: ' + uuid);
     click.block_comment(uuid)
   return ''
   

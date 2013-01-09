@@ -686,10 +686,10 @@ def update_widget(widget_id, url_id):
           comments[comment_id]['pseudonym'] = result[4]
           comments[comment_id]['created_at'] = result[5]
         # now fetch user data
-        web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
+        web_cursor.execute("SELECT id,uuid,first_name,last_name FROM users WHERE id IN %s", (tuple(user_ids),))
         for result in web_cursor:
           user_id = result[0]
-          users[user_id] = { 'uuid':result[1], 'name':result[2] }
+          users[user_id] = { 'uuid':result[1], 'name':result[2] + ' ' + result[3] }
         # now combine and sort
         for comment_id in comments:
           comment = comments[comment_id]
@@ -734,10 +734,10 @@ def update_widget(widget_id, url_id):
       if len(user_ids) > 0:
         # get detailed user data
         users = {}
-        web_cursor.execute("SELECT id,uuid,pledge_name FROM users WHERE id IN %s", (tuple(user_ids),))
+        web_cursor.execute("SELECT id,uuid,first_name,last_name FROM users WHERE id IN %s", (tuple(user_ids),))
         for result in web_cursor:
           user_id = result[0]
-          users[user_id] = { 'uuid':result[1], 'name':result[2] }
+          users[user_id] = { 'uuid':result[1], 'name':result[2] + ' ' + result[3] }
         # combine
         for user in data:
           user['uuid'] = users[user['id']]['uuid']
