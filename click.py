@@ -166,7 +166,6 @@ def update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_
     if old_created_at > created_at:
       raise Exception(uuid + ':out of order message dropped')
     # check if within 1 hour grace period
-    logger.info("%s %s", old_created_at, old_created_at.tzinfo)
     if old_created_at < (datetime.utcnow() - timedelta(hours=1)):
       raise Exception(uuid + ':past edit/undo grace period for update')
     
@@ -332,7 +331,8 @@ def undo_click(uuid):
     finally:
       cursor.close()
       pg_web.autocommit = False
-    if button_user_id is not None and button_user_nickname is not None:
+      
+    if button_user_id is not None:
       update_click(uuid, user_id, facebook_uid, button_id, button_user_id, button_user_nickname, None, None, None, None, 0, datetime.utcnow())
   
 def insert_click(uuid, user_uuid, button_uuid, url, comment_uuid, comment_text, comment_pseudonym, referrer_user_uuid, amount, ip_address, user_agent, referrer, created_at):
