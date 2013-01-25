@@ -696,7 +696,7 @@ def update_widget(widget_id, url_id):
           # remove owner from promoters list
           comment['promoters'] = [promoter for promoter in comment['promoters'] if promoter['id'] != comment['owner_id']]
           # remove owner id from metadata
-          comment['owner'] = users[comment['owner_id']]
+          comment['owner'] = users[comment['owner_id']].copy()
           del comment['owner_id']
           # replace owner uuid and name with pseudonym, if set
           pseudonym = comment['pseudonym']
