@@ -84,6 +84,15 @@ $ pip install -r requirements.txt
 
 
 create datatabases!
+### DATABASE CONFIGURATION ###
+In postgresql.conf:
+  listen_addresses = '*'
+  max_prepared_transactions = 10
+
+In pg_hba.conf:
+  # IPv4 section
+  host    all             all             0.0.0.0/0               md5
+
 
 
 ### RUN MIGRATIONS ###
