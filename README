@@ -61,3 +61,30 @@ PYTHON_ENV=test python -m unittest discover
 
 This will set the PYTHON_ENV variable for just the execution of the tests.  The "discover" command will crawl through the current folder looking for tests, importing all the packages it finds along the way.
 
+Ubuntu 12.10 setup
+==================
+
+#### REQUIREMENTS ####
+
+$ sudo apt-get install build-essential
+$ sudo apt-get install libxml2-dev
+$ sudo apt-get install libxslt1-dev
+$ sudo apt-get install python2.7-dev
+$ sudo apt-get install python-setuptools 
+$ sudo apt-get install python-pkg-resources
+
+$ sudo apt-get install python-pip		
+$ sudo pip install virtualenv			
+
+$ cd data25c/					
+
+$ virtualenv venv --distribute
+$ source venv/bin/activate
+$ pip install -r requirements.txt
+
+
+create datatabases!
+
+
+### RUN MIGRATIONS ###
+$ yoyo-migrate apply ./migrations/ postgres://<user>:<password>@localhost:5432/data25c_development

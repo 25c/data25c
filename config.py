@@ -13,40 +13,67 @@ def pg_connect(url):
   connection = psycopg2.connect(dsn)
   return connection
   
+def database_url(dbname):
+  return 'tcp://%(username)s:%(password)s@%(host)s:%(port)s/%(dbname)s' % \
+    { 
+      'username': environ['ENV_25C_DB_USERNAME'], 
+      'password': environ['ENV_25C_DB_PASSWORD'], 
+      'host': environ['ENV_25C_DB_HOST'], 
+      'port': environ['ENV_25C_DB_PORT'],
+      'dbname': dbname
+    }
+
+def url_base(port):
+  return 'http://localhost:%s' % port
+
+def redis_url():
+  return 'redis://%(host)s:%(port)s/' % \
+    { 'host': environ['ENV_25C_REDIS_HOST'], 'port': environ.get('ENV_25C_REDIS_PORT', 6379) }
+
 SETTINGS = {
   'development': {
-    'URL_BASE_WEB': 'http://tunnel.plus25c.com',
-    'URL_BASE_TIP': 'http://tunnel.plus25c.com',
-    'DATABASE_URL': 'tcp://superuser@localhost/data25c_development',
-    'DATABASE_WEB_URL': 'tcp://superuser@localhost/web25c_development',
-    'REDIS_URL': 'redis://localhost:6379/',
-    'REDIS_WEB_URL': 'redis://localhost:6379/',
+    'URL_BASE_WEB': url_base(environ.get('PORT', 5300)),
+    'URL_BASE_TIP': url_base(environ.get('PORT', 5300)),
+    'DATABASE_URL': database_url('data25c_development'),
+    'DATABASE_WEB_URL': database_url('web25c_development'),
+    'REDIS_URL': redis_url(),
+    'REDIS_WEB_URL': redis_url(),
     'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
     'FACEBOOK_NAMESPACE': 'twentyfivec-dev',
     'STRIPE_API_KEY': 'sk_test_9GECsLndO8PHDgQcAnRIIFFL'
   },
   'test': {
-    'URL_BASE_WEB': 'http://tunnel.plus25c.com',
-    'URL_BASE_TIP': 'http://tunnel.plus25c.com',
-    'DATABASE_URL': 'tcp://superuser@localhost/data25c_test',
-    'DATABASE_WEB_URL': 'tcp://superuser@localhost/web25c_test',
-    'REDIS_URL': 'redis://localhost:6379/',
-    'REDIS_WEB_URL': 'redis://localhost:6379/',
+    'URL_BASE_WEB': url_base(environ.get('PORT', 5300)),
+    'URL_BASE_TIP': url_base(environ.get('PORT', 5300)),
+    'DATABASE_URL': database_url('data25c_test'),
+    'DATABASE_WEB_URL': database_url('web25c_test'),
+    'REDIS_URL': redis_url(),
+    'REDIS_WEB_URL': redis_url(),
     'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
     'FACEBOOK_NAMESPACE': 'twentyfivec-dev',
     'STRIPE_API_KEY': 'sk_test_9GECsLndO8PHDgQcAnRIIFFL'
   },
   'staging': {
-    # most set from heroku config environment variables below
-    'URL_BASE_WEB': 'https://www.plus25c.com',
-    'URL_BASE_TIP': 'https://tip.plus25c.com',
-    'FACEBOOK_NAMESPACE': 'twentyfivec-staging'
+    'URL_BASE_WEB': url_base(environ.get('PORT', 5300)),
+    'URL_BASE_TIP': url_base(environ.get('PORT', 5300)),
+    'DATABASE_URL': database_url('data25c_staging'),
+    'DATABASE_WEB_URL': database_url('web25c_staging'),
+    'REDIS_URL': redis_url(),
+    'REDIS_WEB_URL': redis_url(),
+    'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
+    'FACEBOOK_NAMESPACE': 'twentyfivec-dev',
+    'STRIPE_API_KEY': 'sk_test_9GECsLndO8PHDgQcAnRIIFFL'
   },
   'production': {
-    # most set from heroku config environment variables below
-    'URL_BASE_WEB': 'https://www.25c.com',
-    'URL_BASE_TIP': 'https://tip.25c.com',
-    'FACEBOOK_NAMESPACE': 'twentyfivec'
+    'URL_BASE_WEB': url_base(environ.get('PORT', 5300)),
+    'URL_BASE_TIP': url_base(environ.get('PORT', 5300)),
+    'DATABASE_URL': database_url('data25c_production'),
+    'DATABASE_WEB_URL': database_url('web25c_production'),
+    'REDIS_URL': redis_url(),
+    'REDIS_WEB_URL': redis_url(),
+    'FACEBOOK_APP_TOKEN': '259751957456159|ZRMlX9RvgCMW5v0SpKIoDg3n8aE',
+    'FACEBOOK_NAMESPACE': 'twentyfivec-dev',
+    'STRIPE_API_KEY': 'sk_test_9GECsLndO8PHDgQcAnRIIFFL'
   }
 }[environ['PYTHON_ENV'] if 'PYTHON_ENV' in environ else 'development']
 
